@@ -1,5 +1,4 @@
 ltm profile server-ssl %{AUTH0_ID}%.auth0.com {
-    app-service none
     defaults-from serverssl
     server-name %{AUTH0_ID}%.auth0.com
 }
