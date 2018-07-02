@@ -1,6 +1,6 @@
 # F5 BIGIP Auth0 Integration via OAuth 2.0/OpenID Connect
 
-Configuration templates/scripts/iRules/sample APM policy to utilise Auth0 via OAuth/OpenID Connect
+Configuration templates/scripts/iRules/https://github.com/colin-stubbs/f5-bigip-auth0-integrationsample APM policy to utilise Auth0 via OAuth/OpenID Connect
 
 # Using
 
@@ -47,7 +47,7 @@ This fails with the default Auth0 /.well-known/openid-configuration and /.well-k
 
 The x5t value in /.well-known/jwks.json is correct but BIGIP fails to parse/handle it against the certificate content.
 
-The reason it does this is because the BIGIP implementation is expecting the X5T value to include base64 padding characters ('=' characters) which MUST not be used in the context of JWT's.
+The reason it does this is because the BIGIP implementation is expecting the X5T value to include base64 padding characters ('=' characters) which ***MUST NOT*** be used in the context of JWS's. This is why Auth0 does not have '=' characters in KID/X5T; they conform to the RFC spec.
 
 BIGIP JWKS consumption implementation needs a way in which to validate X5T without requiring padding characters to exist, e.g. calculate base64 KID/X5T and remove '=' characters prior to comparison.
 
