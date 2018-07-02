@@ -27,13 +27,13 @@ All bugs experienced on the following BIGIP versions:
 OpenID Connect Userinfo requests by F5 BIGIP APM fail as BIGIP compares the UserInfo subject (sub) against the subject (sub) previously extracted from the id_token. Because APM went and moronically inserted backslash escapes against the content from the id_token the sub values no longer match.
 
 APM does this with almost everything returned within OAuth tokens and it really shouldn't. For instance, in a typical Auth0 session the following escaped session variables wind up getting messed up at minimum:
-* sub - auth0\|ID which should be auth0|ID
+* sub - auth0\\|ID which should be auth0|ID
 * iss - https:\\/\\/org-id-thingy.auth0.com\\/ which should be https://org-id-thingy.auth0.com/
 * picture - URL to Gravatar etc, forward slashes get escaped with backslash much like iss
 
 The workaround described in Bug ID 685888 does not appear to work in this case as there does not appear to be any event that can be hooked during the APM policy "OAuth Client" macro running. It also appears to obtain two ID tokens at different points, so I'm unclear about what requests it's actually making to Auth0.
 
-It also does not appear to be possible to use a second "OAuth Client" macro that *ONLY* performs a UserInfo request.
+It also does not appear to be possible to use a second "OAuth Client" macro that *ONLY* performs a UserInfo request as APM errors.
 
 ### Example Log Entry
 
