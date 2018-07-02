@@ -36,8 +36,9 @@ The workaround described in Bug ID 685888 does not appear to work in this case a
 To get the OpenID Connect UserInfo request to work you need to use the following in sequence:
 1. OAuth Client macro, OpenID Connect enabled but
 OpenID Connect UserInfo Request set to None
-2. iRule event to call your iRule which will fix up the session.oauth.client.last.id_token.sub etc
-3. OAuth Scope macro, set to External, you can leave the Scopes Request as None and only define the OpenID Connect UserInfo Request
+2. OAuth Scope macro, set to External, you can leave the Scopes Request as None and only define the OpenID Connect UserInfo Request; or use a duplicate of the OpenID Connect UserInfo request as a scope validation request in conjunction with the OpenID Connect UserInfo request
+
+In the OAuth Scope macro it appears as though BIGIP doesn't actually do any comparison of the subject back against a prior ID token subject; hence no further issue with comparison of escaped and non-escaped strings.
 
 Basically looks like this,
 
@@ -46,6 +47,21 @@ Basically looks like this,
 ![OAuth Client Item](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/oauth_client_config_for_openid_connect.png "OAuth Client Item")
 
 ![UserInfo Request](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/oauth_token_external_validation_to_get_openid_connect_userinfo.png "OAuth OpenID Connect UserInfo Request")
+
+Session variables are still backslash escaped.
+
+```
+l  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.email' set to 'cstubbs@gmail.com'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.email_verified' set to 'true'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.name' set to 'cstubbs@gmail.com'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.nickname' set to 'cstubbs'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.picture' set to 'https:\\/\\/s.gravatar.com\\/avatar\\/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.sub' set to 'auth0\|5b31da4b7871d50de046a068'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.UserInfo.updated_at' set to '2018-07-02T16:03:24.168Z'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.authresult' set to '1'
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.oauth.scope.last.errMsg' set to ''
+Jul  3 02:03:26 bigip1 info apmd[5447]: 01490007:6: /Common/webtop.lab.routedlogic.net:Common:facc2f47: Session variable 'session.policy.result' set to 'allow'
+```
 
 ### Example Log Entry
 
