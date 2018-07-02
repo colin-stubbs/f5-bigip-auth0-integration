@@ -404,4 +404,7 @@ php_mcp.cpp: this should never happen.
 [root@bigip1:Active:Standalone] ~ #
 ```
 
+Screenshot
+![Error Message Screenshot](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/policy_export_fails_php_mcp-cpp.png "Issue N Screenshot")
+
 # EOF
