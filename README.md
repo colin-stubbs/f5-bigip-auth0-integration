@@ -28,11 +28,52 @@ OpenID Connect Userinfo requests by F5 BIGIP APM fail as BIGIP compares the User
 
 APM does this with almost everything returned within OAuth tokens and it really shouldn't. For instance, in a typical session the following escaped session variables wind up getting created:
 
-The workaround described in Bug ID 685888 does not appear to work in this case.
+The workaround described in Bug ID 685888 does not appear to work in this case as there does not appear to be any event that can be hooked during the APM policy "OAuth Client" macro running. It also appears to obtain two ID tokens at different points, so I'm unclear about what requests it's actually making to Auth0.
+
+It also does not appear to be possible to use a second "OAuth Client" macro that *ONLY* performs a UserInfo request.
 
 ### Example Log Entry
+
 ```
 Jun 27 17:39:36 bigip1 err apmd[15175]: 01490290:3: /Common/Example1:Common:354989a6:/Common/bigip_as_saml_service_provider_act_oauth_client_ag: OAuth Client: failed for server '/Common/routedlogic.auth0.com' using 'authorization_code' grant type (client_id=Bf4zTpwzeBJ4EUI1VkzMUw44EqQwz2KG), error: UserInfo sub mismatch : UserInfo sub = (auth0|5b31da4b7871d50de046a068) ID token sub = (auth0\|5b31da4b7871d50de046a068)
+```
+
+### Work Around (Terrible Code) iRule
+
+The work around iRule in Bug ID 685888 does not adequately deal with additional escape characters that may appear in thinks like the ID token subject. Auth0 in particular prefixes the subject with 'auth0|' which BIGIP escapes to 'auth0\|', making the subject problematic for later use.
+
+The following iRule can be used to fix various attributes within the ID token. Add more fixes in the string map if you find other cases where BIGIP escapes stuff out that you don't want escaped.
+
+```
+when ACCESS_POLICY_AGENT_EVENT {
+  if { [ACCESS::policy agent_id] equals {FIX_ID_TOKEN} } {
+    set debug_irules [ACCESS::session data get session.custom.oauth.debug]
+    set id_token {}
+    set fix_id_token_attribs [list email iss name nickname picture sub]
+
+    catch { set id_token [ACCESS::session data get session.oauth.client.last.id_token] }
+
+    if { ${id_token} != {} } {
+      if { ${debug_irules} equals {1} } { log local0. "DEBUG: fixing ID token content escape issues because Bug ID 685888" }
+      foreach attrib ${fix_id_token_attribs} {
+        set attrib_value [ACCESS::session data get session.oauth.client.last.id_token.${attrib}]
+        if { ${attrib_value} != {} } {
+          ACCESS::session data set session.oauth.client.last.id_token.${attrib} [string map { {\|} {|} {\\} {} } ${attrib_value}]
+          if { ${debug_irules} equals {1} } { log local0. "DEBUG: fixed session.oauth.client.last.id_token.${attrib} was ${attrib_value} now [ACCESS::session data get session.oauth.client.last.id_token.${attrib}]" }
+        }
+      }
+    }
+  }
+}
+```
+
+```
+Jul  2 22:43:04 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.email was cstubbs@gmail.com now cstubbs@gmail.com
+Jul  2 22:43:04 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.iss was https:\\/\\/routedlogic.auth0.com\\/ now https://routedlogic.auth0.com/
+Jul  2 22:43:04 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.name was cstubbs@gmail.com now cstubbs@gmail.com
+Jul  2 22:43:04 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.nickname was cstubbs now cstubbs
+Jul  2 22:43:04 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.picture was https:\\/\\/s.gravatar.com\\/avatar\\/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png now https://s.gravatar.com/avatar/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png
+Jul  2 22:43:04 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.sub was auth0\|5b31da4b7871d50de046a068 now auth0|5b31da4b7871d50de046a068
 ```
 
 ## Incorrect Handling of JWS KID/X5T Base64 Encoding
@@ -185,3 +226,151 @@ apm oauth jwk-config routedlogic.auth0.com {
 }
 [root@bigip1:Active:Standalone] tmp #
 ```
+
+## Form POST Method Failure @ /oauth/client/redirect
+
+Auth0 has configurable response modes, e.g. query (parameters in URI), fragment (for browser based apps e.g. SPA's), and form_post for POST'ing back to your callback URL.
+
+BIGIP *CAN* handle a POST but fails to actually handle a POST to /oauth/client/redirect properly.
+
+It also fails badly by simply chopping the connection and failing to return anything to the client.
+
+e.g. it seems to expect "code" to be a URI parameter at minimum.
+
+Well done whoever coded that mess up.
+
+Use the following iRule as a kludge for more shitty code. By sticking the code in the URI again this seems to indicate to the internal BIGIP OAuth code that it should now actually look at the POST payload and do useful things.
+
+```
+when HTTP_REQUEST {
+  # work around for BIGIP OAuth client not being able to handle POST based callbacks. Because F5 BIGIP bugs.
+
+  if { [HTTP::uri] starts_with {/oauth/client/redirect} and [string tolower [HTTP::method]] equals {post} } {
+    set debug_irules [ACCESS::session data get session.custom.oauth.debug]
+
+    if { [HTTP::header exists "Content-Length"] } {
+      if { [HTTP::header "Content-Length"] > 1048000 }{
+        set content_length 1048000
+      } else {
+        set content_length [HTTP::header "Content-Length"]
+      }
+    } else {
+      set content_length 1048000
+    }
+    if { $content_length > 0 } {
+      if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] with ${content_length} bytes" }
+      HTTP::collect $content_length
+    }
+  }
+}
+when HTTP_REQUEST_DATA {
+  if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] payload is '[HTTP::payload]'" }
+
+  set kvps [split [HTTP::payload] &]
+
+  if { [HTTP::uri] contains {?} } {
+    set append_to_uri {}
+  } else {
+    set append_to_uri {?aza=aza}
+  }
+  foreach kvp ${kvps} {
+    if { ${kvp} contains {=} } {
+      set key [getfield ${kvp} "=" 1]
+      set value [getfield ${kvp} "=" 2]
+      switch ${key} {
+        "state" -
+        "code" {
+          if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] adding param to URI ${key} = '$value'" }
+          set append_to_uri "${append_to_uri}&${key}=${value}"
+        }
+        default {
+          # do nothing or log as below, comment if not needed
+          if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] param $key = '$value'" }
+        }
+      }
+      unset key value
+    }
+  }
+
+  # whack it all on the end of the URI
+  HTTP::uri "[HTTP::uri]${append_to_uri}"
+
+  unset kvp kvps append_to_uri
+}
+```
+
+Example logs *BEFORE* iRule in use, as you can see ***SUPER MEGA AWESOMELY USEFUL*** debug logs.
+
+```
+Jul  2 22:56:10 bigip1 debug apmd[15183]: 01490266:7: /Common/webtop.lab.routedlogic.net:Common:aac97daf: ApmD.cpp: 'sendAccessPolicyResponse()': 2697: send 'redirect to EUIE' code, redirect URL="/routedlogic.auth0.com:443/authorize?client_id=Bf4zTpwzeBJ4EUI1VkzMUw44EqQwz2KG&redirect_uri=https%3A%2F%2Flab.routedlogic.net%2Foauth%2Fclient%2Fredirect&response_mode=form_post&response_type=code&scope=openid%20openid%20profile%20email%20offline_access&state=M4x_sF0kqWpOSnr1-3O4xA&nonce=5QOBeYzQs0UapkfgesEQpA"
+Jul  2 22:56:10 bigip1 debug apmd[15183]: 01490266:7: /Common/webtop.lab.routedlogic.net:Common:aac97daf: ApmD.cpp: 'process_apd_request()': 1815:  ** done with the request processing **
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: AccessPolicyProcessor/AccessPolicyProcessor.cpp: 'runSessionCleaner()': 1819: tmm_is_down is 0
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: AccessPolicyProcessor/AccessPolicyProcessor.cpp: 'checkCatalogKey()': 271: Found Catalog at tmm.session.f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5, value 222222
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: modules/Authentication/Identity/ifmap_connection.cpp: 'ifmap_send_keep_alive()': 135: Found 0 IF-MAP connections
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: modules/Authentication/Crldp/CrldpCache.cpp: 'CrldpSweeper()': 93: Running CrldpSweeper
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: modules/Authentication/Crldp/CrldpCache.cpp: 'CrldpSweeper()': 102: No entries in CrldpTable
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: AccessPolicyProcessor/AccessPolicyProcessor.cpp: 'runSessionCleaner()': 1855: Running Session Cleaner ...
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: AccessPolicyProcessor/AccessPolicyProcessor.cpp: 'runSessionCleaner()': 1882: 2 sessions with timeout 360s
+Jul  2 22:56:29 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: AccessPolicyProcessor/AccessPolicyProcessor.cpp: 'runSessionCleaner()': 1903: Done session cleaner (timeout=360)...
+^C
+[root@bigip1:Active:Standalone] ~ # tail /var/log/ltm | grep DEBUG
+Jul  2 22:56:25 bigip1 info tmm1[20638]: Rule /Common/RULE-OAuth-Auth0-Form-POST-Fix <HTTP_REQUEST_DATA>: DEBUG: POST payload to lab.routedlogic.net/oauth/client/redirect is 'code=7bz3nqIxQff_7dzo&state=M4x_sF0kqWpOSnr1-3O4xA'
+[root@bigip1:Active:Standalone] ~ #
+```
+
+Example logs *AFTER* iRule in use,
+
+```
+Jul  2 23:01:30 bigip1 debug apmd[15183]: 01490266:7: /Common/webtop.lab.routedlogic.net:Common:5ea6c317: ApmD.cpp: 'sendAccessPolicyResponse()': 2697: send 'redirect to EUIE' code, redirect URL="/routedlogic.auth0.com:443/authorize?client_id=Bf4zTpwzeBJ4EUI1VkzMUw44EqQwz2KG&redirect_uri=https%3A%2F%2Flab.routedlogic.net%2Foauth%2Fclient%2Fredirect&response_mode=form_post&response_type=code&scope=openid%20openid%20profile%20email%20offline_access&state=Zqa0mUrwD48k-0fWEGYk4w&nonce=bkw61Pdq6oFvAShBTIpD7Q"
+Jul  2 23:01:30 bigip1 debug apmd[15183]: 01490266:7: /Common/webtop.lab.routedlogic.net:Common:5ea6c317: ApmD.cpp: 'process_apd_request()': 1815:  ** done with the request processing **
+Jul  2 23:01:34 bigip1 notice tmm1[20638]: 01490538:5: tmm.session.58a322637a4d4_130ooooooooooooooo: Configuration snapshot deleted by Access.
+Jul  2 23:01:34 bigip1 notice tmm[20638]: 01490538:5: tmm.session.58a322637a4d4_130ooooooooooooooo: Configuration snapshot deleted by Access.
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: ApmD.cpp: 'process_accept()': 1597: process_accept: queueing 94
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: ApmD.cpp: 'process_apd_request()': 1684: Request Received : 94
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: queue.cpp: 'setMarker()': 377: queue::setMarker: thread id 48000333178624, step 0, name = Profile, value = readFromSocket
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'readFromSocket()': 159: bytes_received: 521, len: 521
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'readFromSocket()': 181: First header received: POST /oauth/client/redirect?state=Zqa0mUrwD48k-0fWEGYk4w&code=GYmkulTwiVBYwgkV&aza=aza HTTP/1.1
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpRequestHeader()': 417: HTTP Method received: POST
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpRequestHeader()': 446: HTTP URI received: /oauth/client/redirect?state=Zqa0mUrwD48k-0fWEGYk4w&code=GYmkulTwiVBYwgkV&aza=aza
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpRequestHeader()': 491: HTTP major version received: 1
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpRequestHeader()': 492: HTTP minor version received: 1
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 536: Header received, content-length: 50
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, oauth-authorization-code(16)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, oauth-state-param(22)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 536: Header received, client-session-id: 995c973ef762fc0b4627e7fb5ea6c317
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, session-key(32)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, profile-id(34)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, partition-id(6)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 536: Header received, traffic-id: 1
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, session-id(8)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 539: Header received, snapshot-id(32)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parseHttpGenericHeader()': 536: Header received, cmp-pu: 0
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parsePostParam()': 582: Param received, code(16)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490000:7: memcache.c func: "mc_convert_session_var_to_mc_key()" line: 2652 Msg: Converted Var: session.oauth.client./Common/qgovcidmwrappedauthentication_act_oauth_client_ag_1_2.UserInfo to Session Var tmm.session.5ea6c317.session.oauth.client./Common/qgovcidmwrappedauthentication_act_oauth_client_ag_1_2.UserInfo
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parsePostParam()': 582: Param received, state(22)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parsePostParam()': 582: Param received, state(22)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parsePostParam()': 582: Param received, code(16)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: HTTPParser.cpp: 'parsePostParam()': 582: Param received, aza(3)
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: ApmD.cpp: 'process_apd_request()': 1709: start processing of the access policy. Request received: Session_ID = "5ea6c317",Profile_ID = "/Common/webtop.lab.routedlogic.net" Traffic-group Id = "1", Request_From = "", Clientless_Mode = "",No_Inspection_Host = "", CMP_Process_Unit = "0, mc = 0x2ba7f2cd6620"
+Jul  2 23:01:40 bigip1 debug apmd[15183]: 01490266:7: (null):Common:00000000: queue.cpp: 'setMarker()': 377: queue::setMarker: thread id 48000333178624, step 1, name = Profile, value = searchProfileList
+```
+
+Note the function name there? ... parsePostParam() ... looks like the code should be able handle POST normally but is not configured/written to actually do so, and is instead insisting on checking URI parameters for things it wants.
+
+If you enable debugging by way of access session var session.custom.oauth.debug = 1 you should get something like this to help work out what's going on.
+
+```
+Jul  2 23:18:09 bigip1 info tmm[20638]: Rule /Common/RULE-OAuth-Auth0-Form-POST-Fix <HTTP_REQUEST>: DEBUG: POST to lab.routedlogic.net/oauth/client/redirect with 50 bytes
+Jul  2 23:18:09 bigip1 info tmm[20638]: Rule /Common/RULE-OAuth-Auth0-Form-POST-Fix <HTTP_REQUEST_DATA>: DEBUG: POST to lab.routedlogic.net/oauth/client/redirect payload is 'code=Dsw_d90VwYWYjJQO&state=bj3XD-rG_jaIUzW3muHhBg'
+Jul  2 23:18:09 bigip1 info tmm[20638]: Rule /Common/RULE-OAuth-Auth0-Form-POST-Fix <HTTP_REQUEST_DATA>: DEBUG:  to lab.routedlogic.net/oauth/client/redirect adding param to URI code = 'Dsw_d90VwYWYjJQO'
+Jul  2 23:18:09 bigip1 info tmm[20638]: Rule /Common/RULE-OAuth-Auth0-Form-POST-Fix <HTTP_REQUEST_DATA>: DEBUG:  to lab.routedlogic.net/oauth/client/redirect adding param to URI state = 'bj3XD-rG_jaIUzW3muHhBg'
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixing ID token content escape issues because Bug ID 685888
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.email was cstubbs@gmail.com now cstubbs@gmail.com
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.iss was https:\\/\\/routedlogic.auth0.com\\/ now https://routedlogic.auth0.com/
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.name was cstubbs@gmail.com now cstubbs@gmail.com
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.nickname was cstubbs now cstubbs
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.picture was https:\\/\\/s.gravatar.com\\/avatar\\/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png now https://s.gravatar.com/avatar/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png
+Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.sub was auth0\|5b31da4b7871d50de046a068 now auth0|5b31da4b7871d50de046a068
+```
+
+# EOF
