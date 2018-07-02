@@ -54,7 +54,7 @@ when ACCESS_POLICY_AGENT_EVENT {
     set id_token {}
     set fix_id_token_attribs [list email iss name nickname picture sub]
 
-    catch { set id_token [ACCESS::session data get session.oauth.client.last.id_token] }
+    catch { set id_token [ACCESS::session data get -secure session.oauth.client.last.id_token] }
 
     if { ${id_token} != {} } {
       if { ${debug_irules} equals {1} } { log local0. "DEBUG: fixing ID token content escape issues because Bug ID 685888" }
