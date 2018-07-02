@@ -33,7 +33,19 @@ APM does this with almost everything returned within OAuth tokens and it really 
 
 The workaround described in Bug ID 685888 does not appear to work in this case as there does not appear to be any event that can be hooked during the APM policy "OAuth Client" macro running. It also appears to obtain two ID tokens at different points, so I'm unclear about what requests it's actually making to Auth0.
 
-It also does not appear to be possible to use a second "OAuth Client" macro that *ONLY* performs a UserInfo request as APM errors.
+To get the OpenID Connect UserInfo request to work you need to use the following in sequence:
+1. OAuth Client macro, OpenID Connect enabled but
+OpenID Connect UserInfo Request set to None
+2. iRule event to call your iRule which will fix up the session.oauth.client.last.id_token.sub etc
+3. OAuth Scope macro, set to External, you can leave the Scopes Request as None and only define the OpenID Connect UserInfo Request
+
+Basically looks like this,
+
+![Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/simple_policy_flow.png "Policy Flow")
+
+![OAuth Client Item](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/oauth_client_config_for_openid_connect.png "OAuth Client Item")
+
+![UserInfo Request](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/oauth_token_external_validation_to_get_openid_connect_userinfo.png "OAuth OpenID Connect UserInfo Request")
 
 ### Example Log Entry
 
