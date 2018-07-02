@@ -381,7 +381,7 @@ Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_
 If a policy is associated with the following OAuth object types it may generate an error in both webUI and on CLI. It will fail to export via webUI but appears to produce an OK archive via CLI.
 
 OAuth object types:
-* TBC which ones actually cause this
+* OAuth Client/Server
 
 ```
 [root@bigip1:Active:Standalone] ~ # ng_export -t access_policy Auth0-Integration-Template test_policy -p Common
