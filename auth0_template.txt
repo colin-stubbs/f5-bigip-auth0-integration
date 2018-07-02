@@ -1,0 +1,174 @@
+ltm profile server-ssl %{AUTH0_ID}%.auth0.com {
+    app-service none
+    defaults-from serverssl
+    server-name %{AUTH0_ID}%.auth0.com
+}
+apm oauth jwk-config %{AUTH0_ID}%.auth0.com {
+    alg-type RS256
+    cert %{AUTH0_ID}%.auth0.com.crt
+    cert-chain %{AUTH0_ID}%.auth0.com.crt
+    cert-thumbprint-sha1 %{AUTH0_ID_CERT_THUMBPRINT_SHA1}%
+    cert-thumbprint-sha256 %{AUTH0_ID_CERT_THUMBPRINT_SHA256}%
+    key-id %{AUTH0_ID_CERT_KID}%
+    modulus %{AUTH0_ID_CERT_MODULUS}%
+    public-exponent %{AUTH0_ID_CERT_PE}%
+    x5c { %{AUTH0_ID_CERT_PEM}% }
+}
+apm oauth jwt-config %{AUTH0_ID}%.auth0.com {
+    allowed-keys {
+        %{AUTH0_ID}%.auth0.com { }
+    }
+    allowed-signing-algorithms { RS256 HS256 }
+    audience { https://%{AUTH0_ID}%.auth0.com/userinfo }
+    issuer https://%{AUTH0_ID}%.auth0.com/
+}
+apm oauth jwt-provider-list %{AUTH0_ID}%.auth0.com {
+    providers {
+        %{AUTH0_ID}%.auth0.com { }
+    }
+}
+apm aaa oauth-server %{AUTH0_ID}%.auth0.com {
+    client-id %{AUTH0_ID_CLIENT_ID}%
+    client-secret %{AUTH0_ID_CLIENT_SECRET}%
+    client-serverssl-profile-name %{AUTH0_ID}%.auth0.com
+    dns-resolver-name %{AUTH0_BIGIP_DNS_RESOLVER}%
+    mode client
+    provider-name %{AUTH0_ID}%.auth0.com
+}
+apm aaa oauth-provider %{AUTH0_ID}%.auth0.com {
+    authentication-uri https://%{AUTH0_ID}%.auth0.com/authorize
+    description %{AUTH0_ID}%.auth0.com
+    manual-jwt-config-name %{AUTH0_ID}%.auth0.com
+    token-uri https://%{AUTH0_ID}%.auth0.com/oauth/token
+    trusted-ca-bundle ca-bundle.crt
+    type custom
+    use-auto-jwt-config false
+    userinfo-request-uri https://%{AUTH0_ID}%.auth0.com/userinfo
+}
+apm aaa oauth-request Auth0AuthRedirect {
+    method get
+    parameters {
+        client_id {
+            type client-id
+        }
+        redirect_uri {
+            type redirect-uri
+        }
+        response_type {
+            type response-type
+        }
+        scope {
+            type scope
+        }
+    }
+    type auth-redirect-request
+}
+apm aaa oauth-request Auth0AuthRedirectResponseMode {
+    method get
+    parameters {
+        client_id {
+            type client-id
+        }
+        redirect_uri {
+            type redirect-uri
+        }
+        response_mode {
+            value "%{session.custom.auth0.response_mode}"
+        }
+        response_type {
+            type response-type
+        }
+        scope {
+            type scope
+        }
+    }
+    type auth-redirect-request
+}
+apm aaa oauth-request Auth0AuthorizationCodeGrant {
+    method get
+    parameters {
+        audience {
+            value "%{session.custom.auth0.audience}"
+        }
+        client_id {
+            type client-id
+        }
+        redirect_uri {
+            type redirect-uri
+        }
+        response_type {
+            type response-type
+        }
+        scope {
+            type scope
+        }
+    }
+    type auth-redirect-request
+}
+apm aaa oauth-request Auth0ImplicitGrant {
+    method get
+    parameters {
+        audience {
+            value "%{session.custom.auth0.audience}"
+        }
+        client_id {
+            type client-id
+        }
+        connection {
+            value "%{session.custom.auth0.connection}"
+        }
+        redirect_uri {
+            type redirect-uri
+        }
+        response_type {
+            type response-type
+        }
+        scope {
+            type scope
+        }
+    }
+    type auth-redirect-request
+}
+apm aaa oauth-request Auth0RefreshToken {
+    parameters {
+        client_id {
+            type client-id
+        }
+        client_secret {
+            type client-secret
+        }
+        grant_type {
+            type grant-type
+        }
+        refresh_token {
+            value "%{sesssion.oauth.client.last.refresh_token}"
+        }
+    }
+    type token-refresh-request
+}
+apm aaa oauth-request Auth0TokenRequest {
+    parameters {
+        client_id {
+            type client-id
+        }
+        client_secret {
+            type client-secret
+        }
+        grant_type {
+            type grant-type
+        }
+        redirect_uri {
+            type redirect-uri
+        }
+    }
+    type token-request
+}
+apm aaa oauth-request Auth0UserInfoRequest {
+    method get
+    parameters {
+        access_token {
+            type access-token
+        }
+    }
+    type openid-userinfo-request
+}

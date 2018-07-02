@@ -152,7 +152,7 @@ For more info on how/why padding is supposed to be omitted refer to the relevant
 
 [https://tools.ietf.org/html/rfc7515](https://tools.ietf.org/html/rfc7515)
 
-![Error Message Screenshot](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/bigip_oauth_issue_2.png "Issue 2 Screenshot")
+![Error Message Screenshot](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/bigip_oauth_issue_2.png "Issue 2 Screenshot")
 
 ## BIGIP WebUI Permission Errors
 
@@ -169,7 +169,7 @@ Authorization failed: user=https://localhost/mgmt/cm/system/authn/providers/tmos
 ```
 
 Screenshot
-![Error Message Screenshot](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/bigip_oauth_issue_3.png "Issue 3 Screenshot")
+![Error Message Screenshot](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/bigip_oauth_issue_3.png "Issue 3 Screenshot")
 
 ## TMSH Config Merge Issues
 
@@ -374,6 +374,31 @@ Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_
 Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.nickname was cstubbs now cstubbs
 Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.picture was https:\\/\\/s.gravatar.com\\/avatar\\/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png now https://s.gravatar.com/avatar/a17f567a5f1cc701585e3484c2bb2e40?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fcs.png
 Jul  2 23:18:10 bigip1 info tmm[20638]: Rule /Common/RULE-Debug-OAuth-1 <ACCESS_POLICY_AGENT_EVENT>: DEBUG: fixed session.oauth.client.last.id_token.sub was auth0\|5b31da4b7871d50de046a068 now auth0|5b31da4b7871d50de046a068
+```
+
+## Can't Export APM Policy Archives
+
+If a policy is associated with the following OAuth object types it will fail to export.
+
+```
+[root@bigip1:Active:Standalone] ~ # ng_export -t access_policy Auth0-Integration-Template test_policy -p Common
+[root@bigip1:Active:Standalone] ~ # ng_export -t access_policy webtop.lab.routedlogic.net error_policy -p Common
+php_mcp.cpp: this should never happen.
+[root@bigip1:Active:Standalone] ~ # ls -l /shared/tmp/policy-*
+-rw-r--r--. 1 tomcat tomcat 2712557 2018-07-03 00:38 /shared/tmp/policy-error_policy.conf.tar.gz
+-rw-r--r--. 1 tomcat tomcat    1707 2018-07-03 00:38 /shared/tmp/policy-test_policy.conf.tar.gz
+[root@bigip1:Active:Standalone] ~ # tar -z -v -t -f /shared/tmp/policy-error_policy.conf.tar.gz
+-rw-rw-rw- tomcat/tomcat  1124 2018-07-03 00:38 res/0_Common_routedlogic.auth0.com.crt
+-rw-rw-rw- tomcat/tomcat 6563092 2018-07-03 00:38 res/1_Common_ca-bundle.crt
+-rw-rw-rw- tomcat/tomcat     247 2018-07-03 00:38 res/2_Common_WEBTOP-LINK-Google-AU_resource_webtop_link_customization
+-rw-rw-rw- tomcat/tomcat     203 2018-07-03 00:38 res/3_Common_WEBTOP-SECTION-Links-1_resource_webtop_section_customization
+-rw-rw-rw- tomcat/tomcat      62 2018-07-03 00:38 res/4_Common_WEBTOP-Full-1_customization
+-rw-rw-rw- tomcat/tomcat      62 2018-07-03 00:38 res/5_Common_webtop.lab.routedlogic.net_end_deny_ag
+-rw-rw-rw- tomcat/tomcat   23904 2018-07-03 00:38 ng-export.conf
+[root@bigip1:Active:Standalone] ~ # tar -z -v -t -f /shared/tmp/policy-test_policy.conf.tar.gz
+-rw-rw-rw- tomcat/tomcat    62 2018-07-03 00:38 res/0_Common_Auth0-Integration-Template_end_deny_ag
+-rw-rw-rw- tomcat/tomcat  9835 2018-07-03 00:38 ng-export.conf
+[root@bigip1:Active:Standalone] ~ #
 ```
 
 # EOF
