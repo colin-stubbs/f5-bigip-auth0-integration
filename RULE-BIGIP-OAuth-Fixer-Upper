@@ -1,0 +1,80 @@
+ltm rule RULE-BIGIP-OAuth-Fixer-Upper {
+when ACCESS_POLICY_AGENT_EVENT {
+  # this removes silly F5 backslash based escaping that BIGIP automatically
+  # adds to OAuth related response attributes
+
+  if { [ACCESS::policy agent_id] equals {FIX_ID_TOKEN} } {
+    set debug_irules [ACCESS::session data get session.custom.oauth.debug]
+    set id_token {}
+    set fix_id_token_attribs [list email iss name nickname picture sub]
+
+    catch { set id_token [ACCESS::session data get session.oauth.client.last.id_token] }
+
+    if { ${id_token} != {} } {
+      if { ${debug_irules} equals {1} } { log local0. "DEBUG: fixing ID token content escape issues because Bug ID 685888" }
+      foreach attrib ${fix_id_token_attribs} {
+        set attrib_value [ACCESS::session data get session.oauth.client.last.id_token.${attrib}]
+        if { ${attrib_value} != {} } {
+          ACCESS::session data set session.oauth.client.last.id_token.${attrib} [string map { {\|} {|} {\\} {} } ${attrib_value}]
+          if { ${debug_irules} equals {1} } { log local0. "DEBUG: fixed session.oauth.client.last.id_token.${attrib} was ${attrib_value} now [ACCESS::session data get session.oauth.client.last.id_token.${attrib}]" }
+        }
+      }
+    }
+  }
+}
+when HTTP_REQUEST {
+  # work around for BIGIP OAuth client not being able to handle POST based callbacks. Because F5 BIGIP bugs.
+
+  if { [HTTP::uri] starts_with {/oauth/client/redirect} and [string tolower [HTTP::method]] equals {post} } {
+    set debug_irules [ACCESS::session data get session.custom.oauth.debug]
+
+    if { [HTTP::header exists "Content-Length"] } {
+      if { [HTTP::header "Content-Length"] > 1048000 }{
+        set content_length 1048000
+      } else {
+        set content_length [HTTP::header "Content-Length"]
+      }
+    } else {
+      set content_length 1048000
+    }
+    if { $content_length > 0 } {
+      if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] with ${content_length} bytes" }
+      HTTP::collect $content_length
+    }
+  }
+}
+when HTTP_REQUEST_DATA {
+  if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] payload is '[HTTP::payload]'" }
+
+  set kvps [split [HTTP::payload] &]
+
+  if { [HTTP::uri] contains {?} } {
+    set append_to_uri {}
+  } else {
+    set append_to_uri {?aza=aza}
+  }
+  foreach kvp ${kvps} {
+    if { ${kvp} contains {=} } {
+      set key [getfield ${kvp} "=" 1]
+      set value [getfield ${kvp} "=" 2]
+      switch ${key} {
+        "state" -
+        "code" {
+          if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] adding param to URI ${key} = '$value'" }
+          set append_to_uri "${append_to_uri}&${key}=${value}"
+        }
+        default {
+          # do nothing or log as below, comment if not needed
+          if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] param $key = '$value'" }
+        }
+      }
+      unset key value
+    }
+  }
+
+  # whack it all on the end of the URI
+  HTTP::uri "[HTTP::uri]${append_to_uri}"
+
+  unset kvp kvps append_to_uri
+}
+}
