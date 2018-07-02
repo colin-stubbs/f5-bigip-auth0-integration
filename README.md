@@ -43,7 +43,7 @@ Jun 27 17:39:36 bigip1 err apmd[15175]: 01490290:3: /Common/Example1:Common:3549
 
 ### Work Around (Terrible Code) iRule
 
-The work around iRule in Bug ID 685888 does not adequately deal with additional escape characters that may appear in thinks like the ID token subject. Auth0 in particular prefixes the subject with 'auth0|' which BIGIP escapes to 'auth0\|', making the subject problematic for later use.
+The work around iRule in Bug ID 685888 does not adequately deal with additional escape characters that may appear in thinks like the ID token subject. Auth0 in particular prefixes the subject with 'auth0|' which BIGIP escapes to 'auth0\\|', making the subject problematic for later use.
 
 The following iRule can be used to fix various attributes within the ID token. Add more fixes in the string map if you find other cases where BIGIP escapes stuff out that you don't want escaped.
 
