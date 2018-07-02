@@ -165,7 +165,7 @@ e.g. DELETE method to https://A.B.C.D/mgmt/tm/apm/aaa/oauth-provider/~PARTITION~
 Error Text
 ```
 An error occurred:
-Authorization failed: user=https://localhost/mgmt/cm/system/authn/providers/tmos/1f44a60e-11a7-3c51-a49f-82983026b41b/users/c54e66d3-d6ed-328b-a002-f0a9a1cac0b6resource=/mgmt/tm/access/oidc/discover verb=GET uri:http://localhost:8100/mgmt/tm/access/oidc/discover referrer:https://192.168.12.84/tmui/tmui/accessctrl/oauth/app/ sender:10.91.78.26
+Authorization failed: user=https://localhost/mgmt/cm/system/authn/providers/tmos/1f44a60e-11a7-3c51-a49f-82983026b41b/users/c54e66d3-d6ed-328b-a002-f0a9a1cac0b6resource=/mgmt/tm/access/oidc/discover verb=GET uri:http://localhost:8100/mgmt/tm/access/oidc/discover referrer:https://192.168.1.245/tmui/tmui/accessctrl/oauth/app/ sender:10.1.2.34
 ```
 
 Screenshot
