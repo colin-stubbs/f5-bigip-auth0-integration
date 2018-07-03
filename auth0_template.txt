@@ -14,6 +14,7 @@ apm oauth jwk-config %{AUTH0_ID}%.auth0.com {
     x5c { %{AUTH0_ID_CERT_PEM}% }
 }
 apm oauth jwt-config %{AUTH0_ID}%.auth0.com {
+    access-token-expires-in 600
     allowed-keys {
         %{AUTH0_ID}%.auth0.com { }
     }
@@ -22,6 +23,7 @@ apm oauth jwt-config %{AUTH0_ID}%.auth0.com {
     issuer https://%{AUTH0_ID}%.auth0.com/
 }
 apm oauth jwt-provider-list %{AUTH0_ID}%.auth0.com {
+    access-token-expires-in 600
     providers {
         %{AUTH0_ID}%.auth0.com { }
     }
@@ -31,8 +33,9 @@ apm aaa oauth-server %{AUTH0_ID}%.auth0.com {
     client-secret %{AUTH0_ID_CLIENT_SECRET}%
     client-serverssl-profile-name %{AUTH0_ID}%.auth0.com
     dns-resolver-name %{AUTH0_BIGIP_DNS_RESOLVER}%
-    mode client
+    mode client-rs
     provider-name %{AUTH0_ID}%.auth0.com
+    resource-serverssl-profile-name %{AUTH0_ID}%.auth0.com
 }
 apm aaa oauth-provider %{AUTH0_ID}%.auth0.com {
     authentication-uri https://%{AUTH0_ID}%.auth0.com/authorize
@@ -43,6 +46,7 @@ apm aaa oauth-provider %{AUTH0_ID}%.auth0.com {
     type custom
     use-auto-jwt-config false
     userinfo-request-uri https://%{AUTH0_ID}%.auth0.com/userinfo
+    token-validation-scope-uri https://%{AUTH0_ID}%.auth0.com/userinfo
 }
 apm aaa oauth-request Auth0AuthRedirect {
     method get
@@ -170,4 +174,12 @@ apm aaa oauth-request Auth0UserInfoRequest {
         }
     }
     type openid-userinfo-request
+}
+apm aaa oauth-request Auth0ValidationScopeUserInfoRequest {
+    parameters {
+        access_token {
+            type access-token
+        }
+    }
+    type validation-scopes-request
 }
