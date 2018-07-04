@@ -63,71 +63,17 @@ apm aaa oauth-request Auth0AuthRedirect {
         scope {
             type scope
         }
-    }
-    type auth-redirect-request
-}
-apm aaa oauth-request Auth0AuthRedirectResponseMode {
-    method get
-    parameters {
-        client_id {
-            type client-id
-        }
-        redirect_uri {
-            type redirect-uri
-        }
-        response_mode {
-            value "%{session.custom.auth0.response_mode}"
-        }
-        response_type {
-            type response-type
-        }
-        scope {
-            type scope
-        }
-    }
-    type auth-redirect-request
-}
-apm aaa oauth-request Auth0AuthorizationCodeGrant {
-    method get
-    parameters {
         audience {
             value "%{session.custom.auth0.audience}"
-        }
-        client_id {
-            type client-id
-        }
-        redirect_uri {
-            type redirect-uri
-        }
-        response_type {
-            type response-type
-        }
-        scope {
-            type scope
-        }
-    }
-    type auth-redirect-request
-}
-apm aaa oauth-request Auth0ImplicitGrant {
-    method get
-    parameters {
-        audience {
-            value "%{session.custom.auth0.audience}"
-        }
-        client_id {
-            type client-id
         }
         connection {
             value "%{session.custom.auth0.connection}"
         }
-        redirect_uri {
-            type redirect-uri
+        response_mode {
+            value "%{session.custom.auth0.response_mode}"
         }
-        response_type {
-            type response-type
-        }
-        scope {
-            type scope
+        prompt {
+            value "%{session.custom.auth0.prompt}"
         }
     }
     type auth-redirect-request
