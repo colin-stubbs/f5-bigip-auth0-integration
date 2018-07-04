@@ -55,7 +55,7 @@ In the OAuth Scope macro it appears as though BIGIP doesn't actually do any comp
 
 Basically looks like this,
 
-![Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/simple_policy_flow.png "Policy Flow")
+![Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/Auth0-Integration-Simple-Template_Flow.png "Policy Flow")
 
 ![OAuth Client Item](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/oauth_client_config_for_openid_connect.png "OAuth Client Item")
 
