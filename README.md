@@ -4,6 +4,15 @@ Configuration templates/scripts/iRules/sample APM policy to utilise Auth0 via OA
 
 # Using
 
+## Auth0 Instance Certificate Import
+
+You can create/import certificates into BIGIP direct from a URL. Auth0 provides your instances cert in PEM format via the URL https://%{AUTH0_INSTANCE}%.auth0.com/pem
+
+Example TMSH CLI command,
+```
+create sys file ssl-cert routedlogic.auth0.com source-path https://routedlogic.auth0.com/pem
+```
+
 ## Simple Auth0 Authentication
 
 TBC - content will be up soon
