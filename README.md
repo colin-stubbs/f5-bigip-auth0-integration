@@ -17,9 +17,13 @@ create sys file ssl-cert routedlogic.auth0.com source-path https://routedlogic.a
 
 TBC - content will be up soon
 
-## Auth0 Authentication with Access Token/Scope Validation/API Query
+![Simple Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/Auth0-Integration-Simple-Template_Flow.png "Simple Policy Flow")
+
+## Auth0 Authentication with Access Token/Scope Validation/API Query/SSO
 
 TBC - content will be up soon
+
+![Full Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/Auth0-Integration-Full-Template_Flow.png "Full Policy Flow")
 
 # F5 BIGIP Bugs
 
