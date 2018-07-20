@@ -1177,6 +1177,12 @@ proc debug { headers msg level } {
 set AUTH0_ID_CERT_KID {}
 set DNS_RESOLVER_OBJECT {}
 set AUTH0_CERT {}
+set AUTH0_OAUTH_DEBUG {0}
+set AUTH0_RESPONSE_MODE {query}
+set AUTH0_CONNECTION {}
+set AUTH0_AUDIENCE {}
+set AUTH0_SCOPE {openid profile}
+set AUTH0_PROMPT {}
 
 if {[info exists {::auth0_configuration__AUTH0_ID}]} {
 
@@ -1572,27 +1578,27 @@ apm policy agent ending-allow @partition/@service_folder/__POLICY_NAME___end_all
 apm policy agent variable-assign @partition/@service_folder/__POLICY_NAME___act_variable_assign_ag {
     variables {
         {
-            expression "return {}"
+            expression "return {__AUTH0_OAUTH_DEBUG__}"
             varname session.custom.oauth.debug
         }
         {
-            expression "return {query}"
+            expression "return {__AUTH0_RESPONSE_MODE__}"
             varname session.custom.auth0.response_mode
         }
         {
-            expression "return {}"
+            expression "return {__AUTH0_CONNECTION__}"
             varname session.custom.auth0.connection
         }
         {
-            expression "return {https://__AUTH0_ID__.auth0.com/userinfo}"
+            expression "return {__AUTH0_AUDIENCE__}"
             varname session.custom.auth0.audience
         }
         {
-            expression "return {openid profile}"
+            expression "return {__AUTH0_SCOPE__}"
             varname session.custom.auth0.scope
         }
         {
-            expression "return {}"
+            expression "return {__AUTH0_PROMPT__}"
             varname session.custom.auth0.prompt
         }
     }
@@ -1752,7 +1758,7 @@ apm profile access @partition/@service_folder/__POLICY_NAME__ {
 }
     }
 
-    set policy_cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::auth0_configuration__AUTH0_CLIENT_ID}} __POLICY_NAME__ {${POLICY_NAME}} __AUTH0_ID__ {${::auth0_configuration__AUTH0_ID}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $policy_cfg]
+    set policy_cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::auth0_configuration__AUTH0_CLIENT_ID}} __POLICY_NAME__ {${POLICY_NAME}} __AUTH0_ID__ {${::auth0_configuration__AUTH0_ID}} __AUTH0_OAUTH_DEBUG__ {${AUTH0_OAUTH_DEBUG}} __AUTH0_RESPONSE_MODE__ {${AUTH0_RESPONSE_MODE}} __AUTH0_CONNECTION__ {${::auth0_configuration__AUTH0_CONNECTION}} __AUTH0_AUDIENCE__ {${::auth0_configuration__AUTH0_AUDIENCE}} __AUTH0_SCOPE__ {${::auth0_configuration__AUTH0_SCOPE}} __AUTH0_PROMPT__ {${AUTH0_PROMPT}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $policy_cfg]
 
     set fileId [open /var/tmp/${app}-merge.cfg "w"]
     puts -nonewline $fileId $policy_cfg
@@ -1823,6 +1829,15 @@ section auth0_configuration {
       tmsh::run_proc f5.app_utils:get_ssl_certs
     }
   }
+
+  message AUTH0_AUDIENCE_HELP "Audience value. This is essential in order to actually receive a signed JSON Web Token (JWT), if not set Auth0 will return a token which can be used to further interact with Auth0 services (e.g. OpenID Connect UserInfo) but the token cannot be used against other API's. Be sure to setup/define your API in the Auth0 management interface, set the audience value there, and use the same value here to get an appropriate JWT for SSO to your application if it accepts an OAuth Bearer HTTP header with the JWT."
+  string AUTH0_AUDIENCE display "xxlarge"
+
+  message AUTH0_CONNECTION_HELP "Optional value if Auth0 should utilise an external connection for authentiation. Leave blank unless you're sure you need to set this."
+  string AUTH0_CONNECTION display "xxlarge"
+
+  message AUTH0_SCOPE_HELP "The scope to request as part of authentication. Leave at default of 'openid profile' unless you know you need something else."
+  string AUTH0_SCOPE display "xxlarge" default "openid profile"
 }
 section dns_resolver {
   message DNS_RESOLVER_HELP_INTRO "BIG-IP APM as an OAuth/OpenID Connect client will need to connect to Auth0 for a number of requests, to do this it must utilise a DNS resolver configuration object. If you havn't configured a DNS resolver object yet this iApp can create one for you, if you already have one due to special requirements, select that instead."
@@ -1869,6 +1884,15 @@ text {
   auth0_configuration.AUTH0_CERT_FILE "Certificate File"
   auth0_configuration.AUTH0_CERTIFICATE_SOURCE_HELP ""
   auth0_configuration.AUTH0_CERTIFICATE_SOURCE_CHOICE "Auth0 Certificate Source"
+
+  auth0_configuration.AUTH0_AUDIENCE_HELP ""
+  auth0_configuration.AUTH0_AUDIENCE "Auth0 Token Audience"
+
+  auth0_configuration.AUTH0_CONNECTION_HELP ""
+  auth0_configuration.AUTH0_CONNECTION "Auth0 Connection (Optional)"
+
+  auth0_configuration.AUTH0_SCOPE_HELP ""
+  auth0_configuration.AUTH0_SCOPE "Auth0 Scope"
 
   dns_resolver "DNS Resolver Configuration"
   dns_resolver.DNS_RESOLVER_HELP_INTRO ""
