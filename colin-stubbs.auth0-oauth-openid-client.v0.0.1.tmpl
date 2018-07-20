@@ -1,0 +1,1898 @@
+cli script /Common/f5.iapp.1.5.6.cli {
+#  Initialization proc for all templates.
+#  Parameters "start" and "stop" or "end".
+proc iapp_template { action } {
+    switch $action {
+        start {
+            set ::clock_clicks [clock clicks]
+            puts "\nStarting iApp $tmsh::app_template_name [clock format \
+                [clock seconds] -format {%m/%d/%Y %T}]\n"
+            tmsh::log info "Starting iApp template $tmsh::app_template_name"
+        }
+        stop -
+        end {
+            if { [info exists ::substa_debug] } {
+                puts $::substa_debug
+            }
+            puts "\nEnding iApp $tmsh::app_template_name [clock format \
+                [clock seconds] -format {%m/%d/%Y %T}]\nRun time [expr \
+                { ([clock clicks] - $::clock_clicks) / 1000 }] msec\n"
+            tmsh::log info "Ending iApp template $tmsh::app_template_name"
+        }
+    }
+    set ::HTTP_CONTENT_TYPES { application/(css\|css-stylesheet\|doc\|excel\|javascript\|json\|lotus123\|mdb\|mpp\|msaccess\|msexcel\|ms-excel\|mspowerpoint\|ms-powerpoint\|msproject\|msword\|ms-word\|photoshop\|postscript\|powerpoint\|ps\|psd\|quarkexpress\|rtf\|txt\|visio\|vnd\\.excel\|vnd\\.msaccess\|vnd\\.ms-access\|vnd\\.msexcel\|vnd\\.ms-excel\|vnd\\.mspowerpoint\|vnd\\.ms-powerpoint\|vnd\\.ms-pps\|vnd\\.ms-project\|vnd\\.msword\|vnd\\.ms-word\|vnd\\.ms-works\|vnd\\.ms-works-db\|vnd\\.powerpoint\|vnd\\.visio\|vnd\\.wap\\.cmlscriptc\|vnd\\.wap\\.wmlc\|vnd\\.wap\\.xhtml\\+xml\|vnd\\.word\|vsd\|winword\|wks\|word\|x-excel\|xhtml\\+xml\|x-java-jnlp-file\|x-javascript\|x-json\|x-lotus123\|xls\|x-mdb\|xml\|x-mscardfile\|x-msclip\|x-msexcel\|x-ms-excel\|x-mspowerpoint\|x-msproject\|x-ms-project\|x-msword\|x-msworks-db\|x-msworks-wps\|x-photoshop\|x-postscript\|x-powerpoint\|x-ps\|x-quark-express\|x-rtf\|x-vermeer-rpc\|x-visio\|x-vsd\|x-wks\|x-word\|x-xls\|x-xml) image/(photoshop\|psd\|x-photoshop\|x-vsd) text/(css\|html\|javascript\|json\|plain\|postscript\|richtext\|rtf\|vnd\\.wap\\.wml\|vnd\\.wap\\.wmlscript\|wap\|wml\|x-component\|xml\|x-vcalendar\|x-vcard) }
+}
+
+proc iapp_is { args } {
+    set up_var [lindex $args 0]
+    upvar $up_var var
+    if { [info exists var] } {
+        foreach val [lrange $args 1 end] {
+            if { [subst $var] eq $val } {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+proc iapp_substa { args } {
+    upvar substa_in  argx \
+          substa_out rval
+    set   argx $args
+
+    # check the explicit value first.
+    # multiple layers of variable substitution requires multiple subst.
+    # error occurs here if any of the substituted variables do not exist
+    # valid wildcard (*) array entries will fail here first.
+    uplevel {
+        append ::substa_debug "\n$substa_in"
+        if { [info exists [set substa_in]] } {
+            set substa_out [subst $$substa_in]
+            set substa_out [subst $substa_out]
+        } else {
+            # since explicit value did not exist, try a wildcard value.
+            # substitute "*" as the array key and repeat.
+            set substa_tmp [split $substa_in "()"]
+            set substa_in "[lindex $substa_tmp 0](*)"
+            append ::substa_debug "*"
+            if { [info exists [set substa_in]] } {
+                set substa_out [subst $$substa_in]
+                set substa_out [subst $substa_out]
+            } else {
+                error "substa \"$substa_in\" array value not found"
+            }
+        }
+    }
+    return $rval
+}
+
+proc iapp_conf { args } {
+
+    # Return value $object_name is set to the first word in $arg that
+    # contains an underscore, since the position of the object name in
+    # tmsh syntax is not consistent.
+    set args [join $args]
+    set object_name [lindex $args [lsearch -glob $args "*_*"]]
+
+    # Global array ::tmsh_history persists between calls to iapp_conf
+    # in order to suppress duplicate commands.
+    if { ![info exists ::tmsh_history($args)] } {
+        set ::tmsh_history($args) 1
+        iapp_debug $args
+        switch -exact -- [string range $args 0 5] {
+            create { tmsh::create [string range $args 7 end] }
+            modify { tmsh::modify [string range $args 7 end] }
+            delete { tmsh::delete [string range $args 7 end] }
+            default { error "iapp_conf illegal parameter" }
+        }
+    }
+    return $object_name
+}
+
+proc iapp_make_safe_password { password } {
+    if { [string first {'} $password] == -1 } {
+        set rval "'$password'"
+    } elseif { [string first {"} $password] == -1 } {
+        set rval "\"$password\""
+    } else {
+        set rval [string map { \' \\\' \" \\\" \{ \\\{ \} \\\} \; \\\; \| \\\| \# \\\# \  \\\  \\ \\\\ } $password]
+    }
+    return $rval
+}
+
+proc iapp_pull { loc items_list } {
+    upvar $items_list items
+    if { [set item [lindex $items $loc]] != "" } {
+        set items [lreplace $items $loc $loc]
+    }
+    return $item
+}
+
+proc iapp_process_flags { flags_array args_list } {
+    upvar $flags_array flags
+    upvar $args_list args
+
+    if { [set dubdash [lsearch $args "--"]] != -1 } {
+        set args [lreplace $args $dubdash $dubdash];
+    } else {
+        set dubdash end
+    }
+
+    foreach flag [array names flags] {
+        while { [set ptr [lsearch [lrange $args 0 $dubdash] $flag]] != -1 } {
+            set args [lreplace $args $ptr $ptr];
+
+            # we want to run the code in the flags_array at the calling
+            # proc's level so that the variables that it sets up are
+            # available there.
+            set access_var [format "$%s(%s)" $flags_array $flag]
+            set command [subst -nocommands { set ptr $ptr ; subst $access_var }]
+
+            uplevel 1 $command
+        }
+    }
+    return $args
+}
+
+proc iapp_tmos_version { args } {
+    set cversion [tmsh::version]
+    if { $cversion eq "" } {
+        tmsh::log err "unable to determine TMOS version"
+        error "unable to determine TMOS version"
+    }
+
+    # if no op+version was specified, just return the version
+    if { $args eq "" } { return $cversion }
+    if { [llength $args] > 2 } {
+        error "Too many arguments"
+    }
+
+    set op [lindex $args 0]; # operator
+    set NOTFOUND -1
+    # constrain to valid operators - adding more is fine as long as
+    # they are supported by [expr] (and makes sense)
+    if { [lsearch -exact { < > <= >= == != } $op] == $NOTFOUND } {
+        tmsh::log err "illegal operator: $op"
+        error "illegal operator: $op"
+    }
+
+    set tversion [lindex $args 1]; # target version
+    # one or two decimal digits, optionally followed by 0-2 complete groups of
+    # dots followed by one or two decimal digits with nothing before or after
+    set regex {^\d{1,2}(\.\d{1,2}){0,2}$}
+    if { ! [regexp -- $regex $tversion] } {
+        tmsh::log err "cannot parse version from: $tversion"
+        error "cannot parse version from: $tversion"
+    }
+
+    # p=>prefix, c=>current, t=>target
+    foreach p { c t } {
+        # extract major/minor/point components
+        scan [set [set p]version] "%d.%d.%d" [set p]mjr [set p]mnr [set p]pnt
+        # ensure that these are each set to at least 0
+        foreach level { mjr mnr pnt } {
+            if { ! [info exists [set p]${level}] } { set [set p]${level} 0 }
+        }
+        # turn them into one big number that we can compare
+        # leave room in-between just to be safe
+        set [set p]num [expr {
+            [set [set p]mjr]*1000000 +
+            [set [set p]mnr]*10000 +
+            [set [set p]pnt]*100
+        }]
+    }
+    # a simple numeric comparison is all that is needed at this point
+    return [eval expr $cnum $op $tnum ]
+}
+
+proc iapp_safe_display { args } {
+    # strings sent to APL must be truncated to 65535 bytes, see BZ435592
+    if { [string length [set [set args]]] > 65535 } {
+        set last_newline [string last "\n" [set [set args]] 65500]
+        return "[string range [set [set args]] 0 $last_newline]Error: Too many items for display"
+    } else {
+        return [set [set args]]
+    }
+}
+
+proc iapp_get_items { args } {
+
+    # Set default values.
+    set error_msg  "iapp_get_items $args:"
+    set do_binary  0
+    set nocomplain 0
+    set items      ""
+    set join_char  "\n"
+    set recursive  "recursive"
+    set com_dir    "/Common"
+    set loc_dir    "[tmsh::pwd]"
+
+    # Set up flag-related work.
+    array set flags  {
+        -exists      { [set do_binary 1] }
+        -nocomplain  { [set nocomplain 1] }
+        -list        { [set join_char " "] }
+        -norecursive { [set recursive ""] }
+        -local       { [set com_dir   ""] }
+        -dir         { [set loc_dir      [iapp_pull $ptr args]] }
+        -filter      { [set filter_field [iapp_pull $ptr args]] \
+                       [set filter_op    [iapp_pull $ptr args]] \
+                       [set filter_value [iapp_pull $ptr args]] }
+    }
+    iapp_process_flags flags args
+
+    # Get system object names in all requested directories.
+    set save_dir [tmsh::pwd]
+    foreach dir [lsort -unique "$com_dir $loc_dir"] {
+        tmsh::cd $dir
+        set tmsh_rval [catch {
+            foreach obj [tmsh::get_config $args $recursive] {
+
+                if { [info exists filter_field] } {
+                    if { $filter_field eq "NAME" } {
+                        set val [tmsh::get_name $obj]
+                    } else {
+                        # If get_field_value throws error, assume "none" value
+                        if { [catch {
+                            set val [tmsh::get_field_value $obj $filter_field]
+                            # strip quotes per BZ442531
+                            set val [string map {\" ""} $val]
+                        }]} { set val none }
+                    }
+                    # Non-Tcl operators =~ and !~ added for extra flexibility
+                    if { $filter_op eq "=~" } {
+                        set filter "\[regexp \"$filter_value\" \"$val\"\]"
+                    } elseif { $filter_op eq "!~" } {
+                        set filter "!\[regexp \"$filter_value\" \"$val\"\]"
+                    } else {
+                        set filter "\\\"$val\\\" $filter_op \\\"$filter_value\\\""
+                    }
+                    # If filter fails, skip to next object
+                    if { ![eval expr $filter] } {
+                        continue
+                    }
+                }
+                # string map catches /Common added by ltm profile ntlm,
+                # which is unlike all other ltm profile return values.
+                lappend items $dir/[string map {/Common/ ""} [tmsh::get_name $obj]]
+            }
+        } err ]
+    }
+    tmsh::cd $save_dir
+
+    # array keys: $do_binary,$tmsh_rval,$nocomplain. Do not insert whitespace.
+    array set rval {
+        0,0,0 {[join $items $join_char]}
+        0,0,1 {[join $items $join_char]}
+        0,1,0 {[error "$error_msg $err"]}
+        0,1,1 {}
+        1,0,0 {[llength $items]}
+        1,0,1 {[llength $items]}
+        1,1,0 {0}
+        1,1,1 {0}
+    }
+
+    return [subst $rval($do_binary,$tmsh_rval,$nocomplain)]
+}
+
+proc iapp_get_provisioned { args } {
+
+    array set lnum {
+        none      0
+        minimum   1
+        nominal   2
+        dedicated 3
+    }
+
+    # Set defaults.
+    set required minimum
+    set do_binary 1
+
+    # Set up flag-related work.
+    array set flags  {
+        -is          { [set required [iapp_pull $ptr args]] }
+        -level       { [set do_binary 0] }
+    }
+    iapp_process_flags flags args
+    if { [llength $args] > 1 } {
+        error "Too many arguments"
+    }
+
+    # If checking for AM provisioning on TMOS < 11.4,
+    # check for WAM provisioning instead.
+    if { $args eq "am" && [iapp_tmos_version < 11.4] } {
+        set args "wam"
+    }
+
+    # Get the provisioning level. If blank, assume none.
+    # Proc only checks 1 module at a time, so only 1 object is returned.
+    if { [catch {
+        set obj [tmsh::get_config sys provision $args]
+        set level [tmsh::get_field_value [lindex $obj 0] level]
+    }]} { set level none }
+
+    if { $do_binary } {
+        return [expr { $lnum($level) >= $lnum($required) }]
+    } else {
+        return $level
+    }
+}
+
+proc iapp_get_user { args } {
+
+    # Set defaults.
+    set do_role 0
+    set do_binary 0
+
+    # Set up flag-related work.
+    array set flags  {
+        -is_admin    { [set do_binary 1] }
+    }
+    iapp_process_flags flags args
+    if { [llength $args] > 1 } {
+        error "Too many arguments"
+    }
+
+    # Show user auth was introduced in v11.6
+    set user "unknown"
+    catch {
+        set user [tmsh::show auth user field-fmt]
+    } err
+    if { $do_binary } {
+        return [expr { $user == "unknown"
+        || [string first "role " $user] == -1
+        || [string first "role admin" $user] != -1
+        || [string first "role resource-admin" $user] != -1 }]
+    } else {
+        return $user
+    }
+}
+
+proc iapp_destination { args } {
+    # Set defaults. Flag actions may overwrite defaults later.
+    set route_domain    -1
+    set do_mask         0
+    set port            0
+
+    # Set up flag-based actions.
+    array set flags  {
+        -route_domain { [set route_domain [iapp_pull $ptr args]] }
+        -mask         { [set do_mask 1] }
+        -length       { [set cidr_bits [iapp_pull $ptr args]] }
+    }
+
+    if { [llength [set non_switches [iapp_process_flags flags args]]] > 2 } {
+        error "Too many arguments"
+    }
+    if { [llength $non_switches] == 2 } { set port [lindex $non_switches 1] }
+    set addr [lindex $non_switches 0]
+
+
+    # Detect a CIDR mask and pull it off the addr string
+    if { [regexp {/[0-9][0-9]?[0-9]?$} $addr] == 1 } {
+        set loc [string first {/} $addr]
+        set cidr_bits [string range $addr [expr {$loc + 1}] end]
+        set addr [string range $addr 0 [expr {$loc - 1}]]
+    }
+
+    # Pull the route-domain off the addr string, but only use it as the
+    # route domain if it wasn't overridden by -route_domain flag.
+    if { [string first "%" $addr] != -1 } {
+        if { $route_domain == -1 } {
+            # route-domain is still default, so use value from addr string
+            set route_domain [lindex [split $addr "%"] 1]
+        }
+        set addr [lindex [split $addr "%"] 0]
+    }
+
+    if { $do_mask } {
+
+        # Define the delta between ipv4 and ipv6.
+        # length: ipv4 mask is 32 bits, ipv6 is 128 bits.
+        # group: ipv4 is grouped in octets, ipv6 as 16 bit words.
+        # format: ipv4 is decimal notation, ipv6 is hex.
+        # format1 also has the delimiter, format2 does not.
+        array set v {
+            0,length  32
+            0,group   8
+            0,format1 d.
+            0,format2 d
+            1,length  128
+            1,group   16
+            1,format1 .4x:
+            1,format2 .4x
+        }
+        set is_ipv6 [string match "*:*:*" $addr]
+
+        # Soften result of an illegal -length parameter.
+        if { ![info exists cidr_bits] || $cidr_bits > $v($is_ipv6,length) } {
+            set cidr_bits $v($is_ipv6,length)
+        } elseif { $cidr_bits < 0 } {
+            set cidr_bits 0
+        }
+
+        # Loop on the full length of the mask: 32 bits for ipv4, 128 for ipv6
+        for { set octet 0; set i 0 } { $i < $v($is_ipv6,length) } { incr i } {
+
+           # Take a break at intervals to save the grouping and add delimiter.
+           # Interval is 8 bits for ipv4 and 16 bits for ipv6.
+           if { $i && ![expr {$i % $v($is_ipv6,group)}] } {
+
+               # Add the grouping and delimiter to the mask, then reset.
+               append mask [format %$v($is_ipv6,format1) $octet]
+               set octet 0
+           }
+           # Shift the prior bits left by multiplying by 2.
+           # Then add the current bit, which is 1 if part of the mask, 0 if not.
+           # Current bit is part of the mask if $i < number of bits in the mask.
+           set octet [expr { 2 * $octet + ($i < $cidr_bits) }]
+        }
+        # Add the final grouping, then return the finished mask.
+        set ret_val [format $mask%$v($is_ipv6,format2) $octet]
+
+    } else {
+
+        # calculate a destination
+        # the route domain might be a name and we need a number.
+        if { ![string is integer $route_domain] } {
+            set route_domains [tmsh::get_config "/ net route-domain $route_domain"]
+            if { [llength $route_domains] != 1 } {
+                error "no such route domain: $route_domain"
+            }
+            # since we have already determined that the list is 1 long,
+            # this explicit reference to element 0 is safe
+            set route_domain [tmsh::get_field_value [lindex $route_domains 0] "id"]
+        }
+
+        set route_domain [expr { $route_domain == -1 ? "" : "%$route_domain" }]
+
+        # 0 and * represent wildcard port assignments in the GUI,
+        # but TMSH requires the string 'any' to specify a wildcard.
+        if { $port == 0 || $port == "*" } {
+            set port any
+        }
+
+        # Build the final destination. Use ":" for node names even if ipv6.
+        set is_ipv6_literal [string match "*:*:*" $addr]
+        set addr_delimiter  [expr { $is_ipv6_literal ? "." : ":" }]
+        set ret_val ${addr}${route_domain}${addr_delimiter}${port}
+    }
+    return $ret_val
+}
+
+proc iapp_pool_members { args } {
+
+    # Set defaults.
+    array set fields {
+        address          addr
+        port             port
+        port-secure      port_secure
+        connection-limit connection_limit
+        priority-group   priority
+        ratio            ratio
+    }
+    set route_domain ""
+    set port_override -1
+    set aaa_domain 0
+    set aaa_priority -1
+    set app_service ""
+    # Set up flag-related work.
+    array set flags {
+        -fields       { [array set fields  [iapp_pull $ptr args]] }
+        -route_domain { [set route_domain  [iapp_pull $ptr args]] }
+        -port         { [set port_override [iapp_pull $ptr args]] }
+        -aaa_domain   { [set aaa_domain    1] }
+        -aaa_pool     { [set aaa_priority  0] }
+        -noapp        { [set app_service " app-service none"] }
+    }
+    iapp_process_flags flags args
+
+    # Identify the non-address/non-port fields. These go inside braces in tmsh.
+    set nonport_fields [lsearch -all -not -inline -regexp \
+        [array names fields] {address|port|port-secure}]
+
+    set members ""
+    foreach row [join $args] {
+
+        # Skip invalid table rows.
+        if { [llength [join $row]] %2 == 1 } {
+            continue
+        }
+
+        # Import APL table into an array for processing.
+        array unset columns
+        array set columns [join $row]
+        set addr $columns($fields(address))
+
+        # Identify the port number, either from table columns or by -port flag.
+        if { $port_override != -1 } {
+            set port $port_override
+        } elseif { [info exists columns($fields(port))] } {
+            set port $columns($fields(port))
+        } elseif { [info exists columns($fields(port-secure))] } {
+            set port $columns($fields(port-secure))
+        } else {
+            set port 80
+        }
+
+        # If specified, strip entered route domain and append the flag value.
+        if { $route_domain != "" } {
+            set addr [lindex [split $addr "%"] 0]
+            set addr "$addr%$route_domain"
+        }
+
+        # If -aaa_domain, use domain controller format, otherwise use pool format
+        if { $aaa_domain } {
+            append members " $columns($fields(host)) \{ ip $addr $app_service \}"
+        } else {
+            append members " [iapp_destination $addr $port] \{"
+
+            # Transfer non-port fields from the table to the tmsh string.
+            foreach name $nonport_fields {
+                if { [info exists columns($fields($name))] } {
+                    append members " $name $columns($fields($name))"
+                }
+            }
+
+            # If -aaa_pool, add priority field with incrementing value.
+            # This is required by APM.
+            if { $aaa_priority >= 0 } {
+                append members " priority-group [incr aaa_priority]$app_service"
+            }
+            append members " \}"
+        }
+    }
+
+    return "[expr { $aaa_domain ? "" : "members " }][expr { $members eq "" \
+        ? "none" : "replace-all-with \{ $members \}" }]"
+}
+
+proc iapp_debug { args } {
+
+    # Passwords should be obscured in all logs. Fields shown here are handled
+    # in this proc, but the global variable may be overwritten if alternate
+    # fields should be obscured.
+    if { ![info exists ::SENSITIVES] } {
+        set ::SENSITIVES {
+            account-password
+            admin-encrypted-password
+            bind-pw
+            PASSWORD
+            password
+            passwd
+            proxy-ca-passphrase
+            secret
+        }
+    }
+
+    # look for any of the sensitive words, and replace the word that follows it
+    set regex "(\\m([join $::SENSITIVES |])\\M)\\s+\[^\\s\]*"
+    regsub -all $regex [join $args] {\1 -OBSCURED-} args
+    regsub -all "(<Password.*>).*(</Password>)" $args {\1-OBSCURED-\2} args
+
+    set lev [tmsh::get_field_value [lindex [tmsh::get_config sys scriptd \
+        log-level] 0] log-level]
+    if { $lev eq {debug} } {
+        puts $args
+    }
+}
+
+# The apm_config proc provides a tmsh pre-processor for APM
+# configuration, which in most cases will drastically reduce
+# implementation code. To configure APM with this proc, pass
+# it an array of object names and associated meta-tag substitutions.
+# Each object must be categorized as a profile, a resource, or
+# a policy-item. APM agents and customization-groups are derived
+# from these 3 categories as needed.
+#
+# apm_config's return value is a list of the APM profiles defined
+# in the argument and instantiated by the proc. This allows the
+# procedure call to be embedded directly into a virtual server
+# definition.
+#
+# These universal meta-tags may be placed anywhere in the array:
+# <ITEM> The object name, eg. apm_access
+# <PREFIX> The app name, including folder, eg. /Common/my_app.app/my_app
+#
+# Profile objects require the following meta-tags:
+# <PROFILE_TYPE> The tmsh object type, eg. "apm profile access"
+# <PROFILE_DEF>  The body of the object, eg.:
+#     "access-policy <PREFIX>
+#      defaults-from /Common/access
+#      eps-group <PREFIX>_eps
+#      errormap-group <PREFIX>_errormap
+#      general-ui-group <PREFIX>_general_ui"
+#
+# apm_config will automatically create default customization-groups
+# for the "-group" lines specified in access profile definitions.
+# In the above example, there is no need to additionally specify a
+# customization-group for errormap and general-ui.
+#
+# <PROFILE_TYPE> is a catch-all for other APM types, eg:
+#      apm_sso {
+#          <PROFILE_TYPE> {apm sso kerberos}
+#          <PROFILE_DEF>  "account-name <USER>
+#                          account-password <PASS>
+#                          realm <REALM>" }
+#
+# In the example above, <PROFILE_TYPE> and <PROFILE_DEF> are
+# apm_config meta-tags, while <USER>, <PASS>, and <REALM> must
+# be substituted before calling apm_config, eg. if these tags are
+# defined in $pre_proc_map, they may be substituted with:
+# array set apm_map [string map [subst $pre_proc_map] [array get apm_map]]
+#
+# Resource objects require the following meta-tags:
+# <RESOURCE_TYPE> The apm resource object type, eg. "webtop"
+# <RESOURCE_DEF>  The body of the object, eg.:
+#     "customization-group <ITEM>
+#      minimize-to-tray false
+#      webtop-type full"
+#
+# In the above example, a customization-group is specified. Any
+# customization-group is assumed to be blank unless further defined by the
+# <GROUP_DEF> meta-tag, eg. <GROUP_DEF> {type webtop}
+#
+# Policy-item objects are defined by the following meta-tags:
+# <AGENT_TYPE>   default "resource-assign"
+# <AGENT_DEF>    default "customization-group <ITEM>"
+# <ITEM_AGENT>   default "agents { <ITEM>_ag { type <AGENT_TYPE> }}"
+# <ITEM_CAPTION> default "<ITEM>"
+# <ITEM_COLOR>   default "1"
+# <ITEM_TYPE>    default "action"
+# <ITEM_RULES>   defaults to a set of expressions/next-items where specified
+# <RULE_CAPTION_0> default "fallback"
+# <RULE_CAPTION_1> default "Successful"
+# <RULE_CAPTION_2> default "successful"
+#
+# apm_config generates the APM agent and customization-group definitions
+# as required for each policy-item, but specific objects may be defined
+# by using the <AGENT_DEF> and <GROUP_DEF> meta-tags.
+# To suppress the formation of an APM agent, specify <ITEM_AGENT> {}.
+
+proc iapp_apm_config { args } {
+
+    set app_service ""
+    array set flags  {
+        -noapp       { [set app_service "app-service none\n   "] }
+    }
+    iapp_process_flags flags args
+
+    upvar [lindex $args 0] map_array
+
+    # Pull $prefix from the array
+    set prefix $map_array(prefix)
+    unset map_array(prefix)
+
+    # Stencils for creating apm objects
+    set access_form \
+       "<TMSH_CREATE> apm policy access-policy <ITEM> {\n   \
+          $app_service    caption general\n   \
+          start-item <ACCESS_START_ITEM>\n   \
+          default-ending <ACCESS_ENDING>\n   \
+          items replace-all-with {\n<ACCESS_ITEMS>    }\n}"
+
+    set profile_form "<TMSH_CREATE> <PROFILE_TYPE> <ITEM> {\n   \
+        $app_service    <PROFILE_DEF>\n}"
+
+    set resource_form "<TMSH_CREATE> apm resource <RESOURCE_TYPE> <ITEM> {\n   \
+        $app_service    <RESOURCE_DEF>\n}"
+
+    set agent_form "<TMSH_CREATE> apm policy agent <AGENT_TYPE> <ITEM>_ag {\n   \
+        $app_service    <AGENT_DEF>\n}"
+
+    set group_form "<TMSH_CREATE> apm policy customization-group <ITEM> {\
+        $app_service    <GROUP_DEF>}"
+
+    set agent_group_form "<TMSH_CREATE> apm policy customization-group <ITEM>_ag {\
+        $app_service    <GROUP_DEF>}"
+
+    set policy_item_form "<TMSH_CREATE> apm policy policy-item <ITEM> {
+    $app_service    <ITEM_AGENT>caption <ITEM_CAPTION>
+    color <ITEM_COLOR>
+    <ITEM_TYPE>
+    <ITEM_RULES>\n}"
+
+    # 1st round apm string map
+    set default_map_1 {
+        <ACCESS_ITEM> {}
+        <AGENT_DEF> "customization-group <ITEM>_ag"
+        <ITEM_AGENT> "agents replace-all-with {
+        <ITEM>_ag { type <AGENT_TYPE> }}\n    "
+        <ITEM_CAPTION> <ITEM>
+        <ITEM_COLOR> {1}
+        <ITEM_TYPE> "item-type action"
+        <ITEM_RULES> "rules
+        {[expr {[string first <RULE_NEXT_2> $map_array($item)] != -1 ? "{
+            caption <RULE_CAPTION_2>
+            expression <RULE_EXPR_2>
+            next-item ${prefix}_<RULE_NEXT_2>
+        }":""}][expr {[string first <RULE_NEXT_1> $map_array($item)] != -1 ? "{
+            caption <RULE_CAPTION_1>
+            expression <RULE_EXPR_1>
+            next-item ${prefix}_<RULE_NEXT_1>
+        }":""}]{
+            caption <RULE_CAPTION_0>
+            next-item ${prefix}_<RULE_NEXT_0>
+        }}"
+    }
+
+    # 2nd round apm string map
+    set default_map_2 {
+        <ITEM> [expr { $item eq {default} ? "$prefix" : "${prefix}_$item" }]
+        <PREFIX> $prefix
+        <LOCAL_PATH> [string map {/ :} $prefix]
+        <GROUP_DEF> ""
+        <AGENT_TYPE> "resource-assign"
+        <RULE_CAPTION_2> "successful"
+        <RULE_CAPTION_1> "Successful"
+        <RULE_CAPTION_0> "fallback"
+    }
+
+    # Build APM access profile and access-policy from the access_form.
+    # Tags <ACCESS_ITEM> and <ACCESS_ENDING> are picked up from
+    # $map_array items. <ITEM> and <GROUP_DEF> are picked up from
+    # $default_map_2.
+    foreach item [lsort [array names map_array]] {
+
+        # Pick up the <ACCESS_ENDING> tag. There should be just 1.
+        set access_form [string map $map_array($item) $access_form]
+
+        # Filter out items that do not belong in the access-policy.
+        # Anything with an ITEM_xxx tag belongs
+        if { [string first <ITEM_ $map_array($item)] == -1 } {
+            continue
+        }
+
+        # Add to the items list for the access-policy, e.g. priority
+        append access_items "        ${prefix}_$item {<ACCESS_ITEM>}\n"
+        set access_items [string map $map_array($item) $access_items]
+        set access_items [string map [subst $default_map_1] $access_items]
+    }
+
+    # Build APM resources, policy-items, agents, and customization-groups from
+    # the policy_item_form and resource_form.
+    foreach item [lsort [array names map_array]] {
+
+        # Each item starts as a profile, a resource, or a policy-item.
+        # Profiles are free-form, so other apm objects can use the profile form.
+        # In most cases, a policy-item spawns an agent.
+        # Any definition specifying a customization-group will spawn that group.
+        if { [string first "<PROFILE_DEF>" $map_array($item)] != -1 } {
+
+            # Collect profile names for attachment to the virtual server
+            if { [string first "apm profile " $map_array($item)] != -1 } {
+                lappend profiles [expr { $item eq {default}
+                                 ? "$prefix" : "${prefix}_$item" }]
+                # When an access profile is found, built a policy of the same name
+                if { [string first "apm profile access" $map_array($item)] != -1 } {
+                    set def [string map "<ACCESS_ITEMS> {$access_items}" $access_form]
+                    append cmds "[string map [subst $default_map_2] $def]\n"
+                }
+            }
+            set def $profile_form
+        } elseif { [string first "<RESOURCE_DEF>" $map_array($item)] != -1 } {
+            set def $resource_form
+        } else {
+            set def $policy_item_form
+            if { [string first "<ITEM_AGENT> {}" $map_array($item)] == -1 } {
+                append def $agent_form
+            }
+        }
+
+        # Apply 1st pass of string maps
+        set def [string map $map_array($item) $def]
+        set def [string map [subst $default_map_1] $def]
+
+        # If a customization-group is specified, add its definition
+        if { [string first "customization-group" $def] != -1 } {
+            if { [string first "apm policy agent" $def] != -1 } {
+                append def $agent_group_form
+            } elseif { [string first "apm profile access" $def] == -1 } {
+                append def $group_form
+            }
+        }
+
+        # Apply 2nd pass of string maps
+        set def [string map $map_array($item) $def]
+        append cmds [string map [subst $default_map_2] $def]
+    }
+
+    # Divide and execute tmsh commands
+    set tag "<TMSH_CREATE>"
+    set tag_length [string length $tag]
+    set last [expr { [string first $tag $cmds] + $tag_length }]
+    while { [set pos [string first $tag $cmds $last]] != -1 } {
+        incr pos -1
+        iapp_conf create [string range $cmds $last $pos]
+        set last [expr { $pos + $tag_length + 1 }]
+    }
+    iapp_conf create [string range $cmds $last end]
+    return $profiles
+}
+
+proc iapp_upgrade_template { upgrade_var upgrade_trans } {
+    upvar $upgrade_var   upgrade_var_arr
+    upvar $upgrade_trans upgrade_trans_arr
+
+    # create the new variables from the old
+    foreach { var } [array names upgrade_var_arr] {
+
+        # substitute old variable name for abbreviation "##"
+        regsub -all {##} $upgrade_var_arr($var) \$$var map_cmd
+
+        # run the mapping command from inside the array
+        if { [catch { subst $map_cmd } err] } {
+            if { [string first "no such variable" $err] == -1 } {
+                puts "ERROR $err"
+            }
+        }
+    }
+
+    # move variables over and apply translations
+    set var_mods ""
+    set var_adds ""
+    foreach var [array names vx] {
+
+        # if the APL variable name is in the translation array,
+        # then use the custom translation built for that variable.
+        if { [info exists upgrade_trans_arr($var)] } {
+            array set sub_arr [subst $upgrade_trans_arr($var)]
+            if { [info exists sub_arr($vx($var))] } {
+                set vx($var) $sub_arr($vx($var))
+            }
+            array unset sub_arr
+        # else, if the APL variable value is in the translation array,
+        # then use the generic translation of that value.
+        } elseif { [info exists upgrade_trans_arr($vx($var))] } {
+            set vx($var) [subst $upgrade_trans_arr($vx($var))]
+        }
+
+        # add to tmsh command string
+        if { [info exists ::$var] } {
+            append var_mods "\n $var \{ value \"$vx($var)\" \} "
+        } else {
+            append var_adds "\n $var \{ value \"$vx($var)\" \} "
+        }
+    }
+
+    # move tables over
+    set tbl_mods ""
+    set tbl_adds ""
+    foreach tbl [array names tx] {
+
+        # convert table from APL format to TMSH format
+        if { ![llength $tx($tbl)] } {
+            set tbl_def "column-names none"
+        } else {
+            set rows_def ""
+            foreach apl_row $tx($tbl) {
+                array set row_arr [join $apl_row]
+                append rows_def "\n  \{ row \{ "
+                foreach apl_col [array names row_arr] {
+                    append rows_def "$row_arr($apl_col) "
+                }
+                append rows_def "\}\}"
+            }
+            set tbl_def \
+            "\n  column-names \{ [array names row_arr] \} rows \{ $rows_def \}"
+            array unset row_arr
+        }
+
+        # add to tmsh command string
+        if { [info exists ::$tbl] } {
+            append tbl_mods "\n $tbl \{ $tbl_def \} "
+        } else {
+            append tbl_adds "\n $tbl \{ $tbl_def \} "
+        }
+    }
+
+    # construct the "tmsh modify" command
+    set cmd "sys application service $tmsh::app_name "
+    if { [llength $var_mods] } {
+        append cmd "\nvariables modify { $var_mods }"
+    }
+    if { [llength $var_adds] } {
+        append cmd "\nvariables add { $var_adds }"
+    }
+    if { [llength $tbl_mods] } {
+        append cmd "\ntables modify { $tbl_mods }"
+    }
+    if { [llength $tbl_adds] } {
+        append cmd "\ntables add { $tbl_adds }"
+    }
+
+    # Execute with debug output. This conversion takes place within the
+    # existing ASO, so tmsh modify is used instead of tmsh create.
+    iapp_debug "TEMPLATE UPGRADE"
+    iapp_conf modify $cmd
+    return
+}
+
+proc iapp_downgrade_template { pivot_var upgrade_var downgrade_table } {
+    upvar $downgrade_table downgrade_tbl_arr
+
+    # The ASO variable "offload_history" is used to recover the legacy
+    # choice a user made about SSL offload. It should be present in all cases.
+    # This conditional only handles the case where a user has deliberately
+    # deleted it by manipulating the ASO directly from tmsh.
+    if { ![info exists ::offload_history] } {
+        set ::offload_history "No"
+    }
+
+    # BIG-IP erases table contents when the APL optional hides the table.
+    # Since the prior data is not available, this downgrade must back-convert
+    # existing table data. Unlike tables, variables remain intact from the
+    # legacy ASO.
+    set tbl_def ""
+    foreach tbl [array names downgrade_tbl_arr] {
+        # Check for existence of each table in the current context.
+        # If not, skip to next.
+        if { ![info exists [set tbl]] } {
+            continue
+        }
+        # Check for existence of each table in the legacy context.
+        # If not, add an empty table so "tmsh tables modify" does not fail.
+        if { ![info exists ::$downgrade_tbl_arr($tbl)] } {
+            iapp_conf modify sys app ser $tmsh::app_name tables add \{ $downgrade_tbl_arr($tbl) \}
+        }
+        append tbl_def "$downgrade_tbl_arr($tbl) \{ "
+        if { [llength [subst $$tbl]] } {
+            set rows_def ""
+            foreach apl_row [subst $$tbl] {
+                array set row_arr [join $apl_row]
+                append rows_def "\n  \{ row \{ "
+                foreach apl_col [array names row_arr] {
+                    append rows_def "$row_arr($apl_col) "
+                }
+                append rows_def "\}\}"
+            }
+            append tbl_def \
+            "column-names \{ [array names row_arr] \} rows \{ $rows_def \}"
+            array unset row_arr
+        } else {
+            append tbl_def "rows none"
+        }
+        append tbl_def " \} "
+    }
+    regsub -all "\n" $tbl_def {} tbl_def
+    set cmd "sys app ser $tmsh::app_name \
+        variables modify \{ \
+            $pivot_var \{ value $::offload_history \} \
+            $upgrade_var \{ value No \} \
+        \} \
+        tables modify \{ $tbl_def \}"
+    iapp_debug "TEMPLATE DOWNGRADE"
+    iapp_conf modify $cmd
+    return
+}
+
+proc iapp_get_ca_certs { args } {
+    # Procedure formats and returns ca-bundle 509 certificates from ca-bundle.bak
+    # (copy of tmos supplied ca-bundle.crt)
+    # Returns backup files when using -files flag
+    # Returns specified restore file certificates when using -restore -return flags
+    # Returns specified restore file table certificates when using -restore -tablename
+    # Returns selected certificates
+    #
+    # Set defaults. Flag actions may overwrite defaults later.
+    set rest_files         0
+    set do_restore         0
+    set restore_return     0
+    set restore_table_name 0
+    set do_certs 0
+    set user_get [iapp_get_user]
+    set username [string range $user_get [expr {[string last user $user_get] +5 }] end-3 ]
+    # Set up flag-based actions.
+    array set flags  {
+        -files     { [set rest_files 1] }
+        -return    { [set do_restore 1] [set restore_return 1] }
+        -tablename { [set do_restore 1] [set restore_table_name 1] }
+        -certs     { [set do_certs 1] }
+    }
+    iapp_process_flags flags args
+    set fn_ca_bundle "[lindex $args 0]"
+    set cert_choices "[lindex $args 1]"
+    set duplicate " "
+    if { $rest_files eq 0 || $do_restore } {
+        set fh_ca_bundle [open $fn_ca_bundle r]
+        set ca_bundle_data [read $fh_ca_bundle]
+        close $fh_ca_bundle
+        set ca_bundle_split [split [string map "{-----END CERTIFICATE-----} \001" $ca_bundle_data] "\001"]
+        set final ""
+        set r 0
+        # Grab Subject Name and Serial number from each certificate
+        foreach subject $ca_bundle_split {
+            if {$subject eq {}} {
+                continue
+            }
+            incr r
+            set a [string first Subject: $subject]
+            set b [string first \n $subject $a]
+            set ab [string range $subject $a $b]
+            set c [expr {[string first O= $ab] +2}]
+            if { $c < 2 }{
+                set c [expr {[string first CN= $ab] +2}]
+            }
+            set d [expr {[string first , $ab $c] -1}]
+            # Deal with case were comma is not present after subject name
+            if { $d < 0 }{
+                set dc [string range $ab $c end-1]
+            # Deal with case were text is not able to be located using common name, just grab the first 30 characters
+            } elseif { $d > 2000 }{
+                set dc [string range $ab $c 47]
+            } else {
+                set dc [string range $ab $c $d]
+            }
+            set f [expr {[string first Number: $subject] +7}]
+            set g [expr {[string first Signature $subject $f] -1}]
+            set fg [string range $subject $f $g]
+            # Remove spaces and new line characters from serial number
+            set fg_nospace [string map {" " "" "\n" "" ":" ""} $fg]
+            set ref $r
+            # -cert flag returns list of selected root certificates
+            if { $do_certs }{
+                foreach selection $cert_choices {
+                    if { $ref eq $selection }{
+                        # add certificate
+                        append final "${subject}-----END CERTIFICATE-----\n"
+                        puts [tmsh::log notice "User:'${username}' Modified CA-Bundle, adding the following Root CA:(SN) ${fg_nospace} Name:${dc}"]
+                        append duplicate "$ref "
+                    }
+                }
+            } elseif { $dc !="" || $fg_nospace !="" || $restore_table_name eq 1 }{
+                if { $restore_return eq 0 && $restore_table_name eq 0 }{
+                    append final "${dc},(${r})\t${ref}\n"
+                } elseif { $restore_table_name eq 1 }{
+                    set table_cert [string first ### $subject]
+                    if { $table_cert > -1 && $table_cert < 500 } {
+                        set ending "$subject-----END CERTIFICATE-----"
+                        set table_certificate [string range $ending [string first -----BEGIN $ending] [ expr { [string first -----END $ending] +24 }]]
+                        append final  "{ row { \"[string map {"\n" " "} $table_certificate]\" \"[string range $subject 4 [expr { [string first \n $subject 1] -1 }]]\" } }"
+                    }
+
+                } else {
+                    set table_cert [string first ### $subject]
+                    if { $table_cert < 0 || $table_cert > 500 } {
+                        append final "${ref} "
+                    }
+                }
+            }
+        }
+        if { $do_restore && $restore_table_name eq 0 }{
+            set final [string map {"(" ""} $final]
+        }
+        return $final
+    }
+    if { $rest_files }{
+        # Pull TMOS ca-bundle file into list
+        catch { set fn_bak_ca_bundle [exec ls -t /config/ssl/ssl.crt/] } err
+        if { $::errorCode != "" && $::errorCode != "NONE"} {
+            puts "Error during file lookup in ssl certificate directory: ${err}"
+            error "Error during file lookup in ssl certificate directory: ${err}"
+        }
+        foreach bak [join "$fn_bak_ca_bundle"] {
+            set full_path "/config/ssl/ssl.crt/$bak"
+            if { [iapp_is full_path $fn_ca_bundle] }{
+                set fn_bak_exists 1
+                break
+            } else {
+                set fn_bak_exists 0
+            }
+        }
+        if { $fn_bak_exists }{
+            puts "Backup of factory TMOS ca-bundle /config/ssl/ssl.crt/ca-bundle.crt, at:${fn_ca_bundle}, already exists. No need to backup"
+        } elseif { $fn_bak_exists eq 0 }{
+            puts "Backing up factory TMOS ca-bundle /config/ssl/ssl.crt/ca-bundle.crt, to ${fn_ca_bundle}."
+            catch { exec cp /config/ssl/ssl.crt/ca-bundle.crt ${fn_ca_bundle} } err
+            if { $::errorCode != "" && $::errorCode != "NONE" } {
+                puts "Error creating backup file:${fn_ca_bundle}: ${err}"
+                error "Error creating backup file:${fn_ca_bundle}: ${err}"
+            }
+        }
+        set restore_list [lsearch -all -inline $fn_bak_ca_bundle *_bak*]
+        set restore_final ""
+        foreach res $restore_list {
+            append restore_final "${res}\t${res}\n"
+        }
+        if { $restore_final == "" }{
+            return "No restore files found"
+        } else {
+            return $restore_final
+        }
+    }
+}
+    app-service none
+    description none
+    ignore-verification false
+    script-checksum none
+    script-signature none
+    signing-key none
+}
+sys application template /Common/colin-stubbs.auth0-oauth-openid-client.v0.0.1 {
+    actions {
+        definition {
+            html-help {
+                <p><b>F5 APM as Auth0 OAuth/OpenID Connect Client iApp Template</b></p>
+<p>This iApp template assists the configuration of the BIG-IP APM as a client to Auth's OAuth/OpenID Connect API. </p>
+<p>Before you start:</p>
+<ul>
+<li>All of the help for this iApp template is found inline. Select <b>Yes, show inline help</b> from the inline help question for assistance in configuring the iApp.</li>
+</ul>
+            }
+            implementation {
+                tmsh::include "f5.iapp.1.5.6.cli"
+tmsh::include "f5.app_utils"
+
+catch {iapp_template start}
+
+set app $tmsh::app_name
+
+set DEFAULT_ANSWER      /#default#
+set DO_NOT_USE_ANSWER   /#do_not_use#
+set CREATE_NEW_ANSWER   /#create_new#
+set USE_PREVIOUS_ANSWER /#use_previous#
+set NONE_ANSWER         /#none#
+
+# constants
+set NO_ANSWER "No"
+set YES_ANSWER "Yes"
+set ONE_SPACE " "
+
+tmsh::log_dest file
+tmsh::log_level crit
+
+set partition "/[lindex [split [tmsh::pwd] /] 1]"
+set partition_name "[lindex [split [tmsh::pwd] /] 1]"
+
+if { $partition == "/" } {
+   puts "Warning: behaviour not well defined when @partition is \"/\""
+   set defaultrd 0
+} else {
+   set obj [tmsh::get_config auth partition $partition_name default-route-domain]
+   set defaultrd [tmsh::get_field_value [lindex $obj 0] default-route-domain]
+}
+
+if { [tmsh::get_field_value [lindex [tmsh::get_config sys scriptd log-level] 0] log-level] eq "debug" } {
+  set iapp__logLevel 10
+}
+
+# Print a timestamped debug message to /var/tmp/scriptd.out
+# Input: headers = TCL list of headers for the log message
+#        msg = The message to log
+#        level = Integer indicated the log level for this message
+proc debug { headers msg level } {
+  if { $::iapp__logLevel >= $level } {
+    set systemTime [clock seconds]
+    set brackets ""
+    if { [llength $headers] > 0 } {
+      set brackets [format "\[%s\]" [join $headers "\]\["]]
+    }
+    set pre [format "\[%s %s\]\[%s\]%s" [clock format $systemTime -format %D] [clock format $systemTime -format %H:%M:%S] $::app $brackets]
+    puts [format "%s %s" $pre [string map [list "\n" "\n$pre " ] $msg]]
+  }
+}
+
+
+set AUTH0_ID_CERT_KID {}
+set DNS_RESOLVER_OBJECT {}
+set AUTH0_CERT {}
+
+if {[info exists {::auth0_configuration__AUTH0_ID}]} {
+
+  if { ${::auth0_configuration__AUTH0_CERTIFICATE_SOURCE_CHOICE} equals {download} } {
+    set status [catch {tmsh::create sys file ssl-cert ${::auth0_configuration__AUTH0_ID}.auth0.com source-path https://${::auth0_configuration__AUTH0_ID}.auth0.com/pem} message]
+    debug [list create_cert done] "status=$status message=$message" 9
+    if { ${message} equals {} } {
+      set AUTH0_CERT ${::auth0_configuration__AUTH0_ID}.auth0.com
+    }
+  } else {
+    set AUTH0_CERT ${::auth0_configuration__AUTH0_CERT_FILE}
+  }
+
+  set jwks_url "https://${::auth0_configuration__AUTH0_ID}.auth0.com/.well-known/jwks.json"
+
+  set status [catch { set AUTH0_ID_CERT_KID [exec /usr/bin/curl --connect-timeout 5 -k -s -o - ${jwks_url} | jq -r .keys\[0\].kid] } message]
+  debug [list curl_get_kid done] "status=$status message=$message" 9
+}
+
+  if { ${::dns_resolver__DNS_RESOLVER_OBJECT_CHOICE} == {create} } {
+    # create new DNS resolver object here
+    iapp_conf create net dns-resolver ${app}_dns_resolver
+    set DNS_RESOLVER_OBJECT ${app}_dns_resolver
+  } elseif { ${::dns_resolver__DNS_RESOLVER_SELECTION} != {} } {
+    set DNS_RESOLVER_OBJECT ${::dns_resolver__DNS_RESOLVER_SELECTION}
+  }
+
+  if { ${AUTH0_ID_CERT_KID} != {} and ${DNS_RESOLVER_OBJECT} != {} and ${AUTH0_CERT} != {} } {
+    set cfg {
+ltm profile server-ssl __AUTH0_ID__.auth0.com {
+  defaults-from serverssl
+  server-name __AUTH0_ID__.auth0.com
+}
+apm oauth jwk-config __AUTH0_ID__.auth0.com {
+  alg-type RS256
+  cert __AUTH0_CERT__
+  cert-chain __AUTH0_CERT__
+  key-id __AUTH0_ID_CERT_KID__
+}
+apm oauth jwt-config __AUTH0_ID__.auth0.com {
+  access-token-expires-in 600
+  allowed-keys {
+    __AUTH0_ID__.auth0.com { }
+  }
+  allowed-signing-algorithms { RS256 HS256 }
+  audience { https://__AUTH0_ID__.auth0.com/userinfo }
+  issuer https://__AUTH0_ID__.auth0.com/
+}
+apm oauth jwt-provider-list __AUTH0_ID__.auth0.com {
+  access-token-expires-in 600
+  providers {
+    __AUTH0_ID__.auth0.com { }
+  }
+}
+apm aaa oauth-server __AUTH0_ID__.auth0.com {
+  client-id __AUTH0_CLIENT_ID__
+  client-secret __AUTH0_CLIENT_SECRET__
+  client-serverssl-profile-name __AUTH0_ID__.auth0.com
+  dns-resolver-name __DNS_RESOLVER_OBJECT__
+  mode client-rs
+  provider-name __AUTH0_ID__.auth0.com
+  resource-serverssl-profile-name __AUTH0_ID__.auth0.com
+}
+apm aaa oauth-provider __AUTH0_ID__.auth0.com {
+  authentication-uri https://__AUTH0_ID__.auth0.com/authorize
+  description __AUTH0_ID__.auth0.com
+  manual-jwt-config-name __AUTH0_ID__.auth0.com
+  token-uri https://__AUTH0_ID__.auth0.com/oauth/token
+  trusted-ca-bundle ca-bundle.crt
+  type custom
+  use-auto-jwt-config false
+  userinfo-request-uri https://__AUTH0_ID__.auth0.com/userinfo
+  token-validation-scope-uri https://__AUTH0_ID__.auth0.com/userinfo
+}
+apm aaa oauth-request Auth0AuthRedirect {
+  method get
+  parameters {
+    client_id {
+      type client-id
+    }
+    redirect_uri {
+      type redirect-uri
+    }
+    response_type {
+      type response-type
+    }
+    scope {
+      type scope
+    }
+    audience {
+      value "%{session.custom.auth0.audience}"
+    }
+    connection {
+      value "%{session.custom.auth0.connection}"
+    }
+    response_mode {
+      value "%{session.custom.auth0.response_mode}"
+    }
+    prompt {
+      value "%{session.custom.auth0.prompt}"
+    }
+  }
+  type auth-redirect-request
+}
+apm aaa oauth-request Auth0RefreshToken {
+  parameters {
+    client_id {
+      type client-id
+    }
+    client_secret {
+      type client-secret
+    }
+    grant_type {
+      type grant-type
+    }
+    refresh_token {
+      value "%{sesssion.oauth.client.last.refresh_token}"
+    }
+  }
+  type token-refresh-request
+}
+apm aaa oauth-request Auth0TokenRequest {
+  parameters {
+    client_id {
+      type client-id
+    }
+    client_secret {
+      type client-secret
+    }
+    grant_type {
+      type grant-type
+    }
+    redirect_uri {
+      type redirect-uri
+    }
+  }
+  type token-request
+}
+apm aaa oauth-request Auth0UserInfoRequest {
+  method get
+  parameters {
+    access_token {
+      type access-token
+    }
+  }
+  type openid-userinfo-request
+}
+apm aaa oauth-request Auth0ValidationScopeUserInfoRequest {
+  parameters {
+    access_token {
+      type access-token
+    }
+  }
+  type validation-scopes-request
+}
+apm sso oauth-bearer SSO-OAuth-Bearer-__AUTH0_ID__.auth0.com {
+    oauth-server __AUTH0_ID__.auth0.com
+}
+  }
+
+  set cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::auth0_configuration__AUTH0_CLIENT_ID}} __AUTH0_CLIENT_SECRET__ {${::auth0_configuration__AUTH0_CLIENT_SECRET}} __AUTH0_ID_CERT_KID__ {${AUTH0_ID_CERT_KID}} __AUTH0_CERT__ {${AUTH0_CERT}} __AUTH0_ID__ {${::auth0_configuration__AUTH0_ID}} __DNS_RESOLVER_OBJECT__ {${DNS_RESOLVER_OBJECT}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $cfg]
+
+  set fileId [open /var/tmp/${app}-merge.cfg "w"]
+  puts -nonewline $fileId $cfg
+  close $fileId
+
+  tmsh::load sys config merge file /var/tmp/${app}-merge.cfg
+
+  if { ${::apm_policy__APM_POLICY_ACTION_CHOICE} == {create} } {
+
+    set POLICY_NAME "${app}_policy"
+
+    set policy_cfg {
+apm policy agent aaa-oauth @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_oauth_client_ag_1_1 {
+    auth-redirect-request Auth0AuthRedirect
+    openid-connect enabled
+    scope "%{session.custom.auth0.scope}"
+    server __AUTH0_ID__.auth0.com
+    token-refresh-request Auth0RefreshToken
+    token-request Auth0TokenRequest
+}
+
+apm policy agent logging @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_logging_ag_1_1 {
+    log-message "OAuth based authentication or token request failed"
+    variables {
+        {
+            session-var session.oauth.*
+        }
+    }
+}
+
+apm policy agent variable-assign @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_variable_assign_ag {
+    variables {
+        {
+            expression "string map { {\\|} {|} } [mcget {session.oauth.client.last.id_token.sub}]"
+            varname session.sso.token.last.username
+        }
+        {
+            expression "mcget {session.oauth.client.last.id_token.name}"
+            varname session.logon.last.username
+        }
+    }
+}
+
+apm policy agent aaa-oauth @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_1_ag {
+    jwt-provider-list __AUTH0_ID__.auth0.com
+    token-validation-mode internal
+    type scope
+}
+
+apm policy agent aaa-oauth @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_ag {
+    openid-userinfo-request Auth0UserInfoRequest
+    server __AUTH0_ID__.auth0.com
+    type scope
+}
+
+apm policy agent logging @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_1_ag {
+    log-message "OAuth JWT JWS validation failed"
+    variables {
+        {
+            session-var session.oauth.*
+        }
+    }
+}
+
+apm policy agent logging @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_ag {
+    log-message "OpenID Connect Scope Validation and/or UserInfo Request failed"
+    variables {
+        {
+            session-var session.oauth.*
+        }
+    }
+}
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_out_1_1 {
+    caption Successful
+    color 1
+    item-type terminal-out
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_oauth_client_1_1 {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_oauth_client_ag_1_1 {
+            type aaa-oauth
+        }
+    }
+    caption OpenID-Connect-Client
+    color 1
+    item-type action
+    rules {
+        {
+            caption Successful
+            expression "expr {[mcget {session.oauth.client.last.authresult}] == 1}"
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_1
+        }
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_logging_4_1
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_logging_4_1 {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_logging_ag_1_1 {
+            type logging
+        }
+    }
+    caption Logging-1
+    color 1
+    item-type action
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_failure_1_1
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_variable_assign {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_variable_assign_ag {
+            type variable-assign
+        }
+    }
+    caption Assign-Username
+    color 1
+    item-type action
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_out_1_1
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_1 {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_1_ag {
+            type aaa-oauth
+        }
+    }
+    caption JWT-JWS-Validation
+    color 1
+    item-type action
+    rules {
+        {
+            caption Successful
+            expression "expr {[mcget {session.oauth.scope.last.authresult}] == 1}"
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope
+        }
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_1
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_ag {
+            type aaa-oauth
+        }
+    }
+    caption OpenID-Connect-UserInfo
+    color 1
+    item-type action
+    rules {
+        {
+            caption Successful
+            expression "expr {[mcget {session.oauth.scope.last.authresult}] == 1}"
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_variable_assign
+        }
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_1 {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_1_ag {
+            type logging
+        }
+    }
+    caption Logging-2
+    color 1
+    item-type action
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_failure_1_1
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging {
+    agents {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_ag {
+            type logging
+        }
+    }
+    caption Logging-3
+    color 1
+    item-type action
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_failure_1_1
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_failure_1_1 {
+    caption Failure
+    color 2
+    item-type terminal-out
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ent_in_1_1 {
+    caption In
+    color 1
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_oauth_client_1_1
+        }
+    }
+}
+
+apm policy agent ending-allow @partition/@service_folder/__POLICY_NAME___end_allow_ag { }
+
+apm policy agent variable-assign @partition/@service_folder/__POLICY_NAME___act_variable_assign_ag {
+    variables {
+        {
+            expression "return {}"
+            varname session.custom.oauth.debug
+        }
+        {
+            expression "return {query}"
+            varname session.custom.auth0.response_mode
+        }
+        {
+            expression "return {}"
+            varname session.custom.auth0.connection
+        }
+        {
+            expression "return {https://__AUTH0_ID__.auth0.com/userinfo}"
+            varname session.custom.auth0.audience
+        }
+        {
+            expression "return {openid profile}"
+            varname session.custom.auth0.scope
+        }
+        {
+            expression "return {}"
+            varname session.custom.auth0.prompt
+        }
+    }
+}
+
+apm policy agent ending-deny @partition/@service_folder/__POLICY_NAME___end_deny_ag {
+}
+
+apm policy access-policy @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1 {
+    caption Auth0-Authentication
+    default-ending @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_failure_1_1
+    items {
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_logging_1 { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_oauth_scope_1 { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1_act_variable_assign { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_logging_4_1 { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_act_oauth_client_1_1 { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ent_in_1_1 { }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_failure_1_1 {
+            priority 3
+        }
+        @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ter_out_1_1 {
+            priority 2
+        }
+    }
+    start-item @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_ent_in_1_1
+    type macro
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME___mac_auth0openidconnect {
+    caption Auth0-Authentication
+    color 1
+    item-type macro-call
+    macro @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1
+    rules {
+        {
+            caption Successful
+            next-item @partition/@service_folder/__POLICY_NAME___end_allow
+        }
+        {
+            caption Failure
+            next-item @partition/@service_folder/__POLICY_NAME___end_deny
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME___end_allow {
+    agents {
+        @partition/@service_folder/__POLICY_NAME___end_allow_ag {
+            type ending-allow
+        }
+    }
+    caption Allow
+    color 1
+    item-type ending
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME___act_variable_assign {
+    agents {
+        @partition/@service_folder/__POLICY_NAME___act_variable_assign_ag {
+            type variable-assign
+        }
+    }
+    caption Auth0-Configuration
+    color 1
+    item-type action
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME___mac_auth0openidconnect
+        }
+    }
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME___end_deny {
+    agents {
+        @partition/@service_folder/__POLICY_NAME___end_deny_ag {
+            type ending-deny
+        }
+    }
+    caption Deny
+    color 2
+    item-type ending
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME___ent {
+    caption Start
+    color 1
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME___act_variable_assign
+        }
+    }
+}
+
+apm policy access-policy @partition/@service_folder/__POLICY_NAME__ {
+    default-ending @partition/@service_folder/__POLICY_NAME___end_deny
+    items {
+        @partition/@service_folder/__POLICY_NAME___act_variable_assign { }
+        @partition/@service_folder/__POLICY_NAME___end_allow { }
+        @partition/@service_folder/__POLICY_NAME___end_deny { }
+        @partition/@service_folder/__POLICY_NAME___ent { }
+        @partition/@service_folder/__POLICY_NAME___mac_auth0openidconnect { }
+    }
+    macros { @partition/@service_folder/__POLICY_NAME__-auth0openidconnect_1_1 }
+    start-item @partition/@service_folder/__POLICY_NAME___ent
+}
+
+apm profile access @partition/@service_folder/__POLICY_NAME__ {
+    accept-languages { en }
+    access-policy @partition/@service_folder/__POLICY_NAME__
+    access-policy-timeout 300
+    default-language en
+    defaults-from /Common/access
+    domain-cookie none
+    domain-mode single-domain
+    eps-group @partition/@service_folder/__POLICY_NAME___eps
+    errormap-group @partition/@service_folder/__POLICY_NAME___errormap
+    exchange-profile none
+    framework-installation-group @partition/@service_folder/__POLICY_NAME___frameworkinstallation
+    general-ui-group @partition/@service_folder/__POLICY_NAME___general_ui
+    generation 1
+    generation-action noop
+    httponly-cookie true
+    inactivity-timeout 900
+    log-settings {
+        /Common/default-log-setting
+    }
+    logout-uri-include none
+    logout-uri-timeout 5
+    max-concurrent-sessions 0
+    max-concurrent-users 0
+    max-failure-delay 5
+    max-in-progress-sessions 128
+    max-session-timeout 604800
+    min-failure-delay 2
+    modified-since-last-policy-sync true
+    ntlm-auth-name none
+    oauth-profile none
+    persistent-cookie false
+    primary-auth-service none
+    restrict-to-single-client-ip false
+    sandboxes {
+        /Common/hosted-content {
+            retain-public-access true
+        }
+    }
+    scope profile
+    secure-cookie true
+    sso-name SSO-OAuth-Bearer-__AUTH0_ID__.auth0.com
+    type all
+    use-http-503-on-error false
+    user-identity-method http
+}
+    }
+
+    set policy_cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::auth0_configuration__AUTH0_CLIENT_ID}} __POLICY_NAME__ {${POLICY_NAME}} __AUTH0_ID__ {${::auth0_configuration__AUTH0_ID}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $policy_cfg]
+
+    set fileId [open /var/tmp/${app}-merge.cfg "w"]
+    puts -nonewline $fileId $policy_cfg
+    close $fileId
+
+    tmsh::load sys config merge file /var/tmp/${app}-merge.cfg
+
+    tmsh::modify apm profile access ${POLICY_NAME} generation-action increment
+
+    tmsh::modify apm profile access ${POLICY_NAME} generation-action increment
+  }
+}
+
+iapp_template stop
+            }
+            macro {
+            }
+            presentation {
+                include "/Common/f5.apl_common"
+
+### CHOICES ###
+define choice INLINE_HELP display "xxlarge" default "max" {
+  "Yes, show inline help" => "max",
+  "No, do not show inline help" => "hide"
+}
+define choice CONFIGURATION_MODE display "xxlarge" default "hide" {
+  "Basic - Use Auth0 default and iApp recommended settings" => "basic",
+  "Advanced - Configure all options" => "advanced"
+}
+define choice AUTH0_SCENARIO default "basic" display "xxlarge" {
+  "Basic" => "basic",
+  "Full" => "full",
+  "Single Page Application" => "spa"
+}
+define choice AUTH0_CERTIFICATE_SOURCE default "existing" display "xxlarge" {
+  "Existing Certificate File on this BIG-IP" => "existing",
+  "Download and install certificate from Auth0" => "download"
+}
+define choice DNS_RESOLVER_OBJECT default "existing" display "xxlarge" {
+  "Use Existing" => "existing",
+  "Create New" => "create"
+}
+define choice APM_POLICY_ACTION default "basic" display "xxlarge" {
+  "Create" => "create",
+  "No policy required" => "ignore"
+}
+
+### SECTIONS ###
+section introduction {
+  message INTRODUCTION "Use this template to configure BIG-IP with APM federation components, and optionally create an access policy, to act as an OAuth/OpenID Connect Client against Auth0."
+}
+
+section auth0_configuration {
+  message AUTH0_CONFIGURATION_HELP_INTRO "The following parameters are available in the Auth0 Dashboard for your instance. You will need to create an application to represent this F5 BIG-IP and to obtain the client ID and secret. The application type can be any, but is probably best defined as a 'Regular Web Application'."
+
+  message AUTH0_ID_HELP "Your Auth0 ID is the tenant ID followed by region if using a non-US region. For example if your tenant is 'bigcorp' deployed in the US the Auth0 ID is 'bigcorp', if you have a second tenant for bigcorp in Australia the Auth0 ID is likely 'bigcorp.au'."
+  string AUTH0_ID display "xxlarge"
+  message AUTH0_CLIENT_ID_HELP "This is the unique string that identifies your application that represents this BIG-IP. Find it in the Auth0 admin interface, e.g. under https://manage.auth0.com/#/applications"
+  string AUTH0_CLIENT_ID display "xxlarge"
+  message AUTH0_CLIENT_SECRET_HELP "This is the secret key used for communication between Auth0 and your application that represents this BIG-IP. Find it in the Auth0 admin interface, within the application configuration, e.g. under https://manage.auth0.com/#/applications"
+  string AUTH0_CLIENT_SECRET display "xxlarge"
+
+  message AUTH0_CERTIFICATE_SOURCE_HELP "The X.509 certificate used by Auth0 to digitally sign some tokens and messages must exist on the BIG-IP. If you've already downloaded and installed it select the certificate from the list. If you have not obtained the certificate yet this iApp will do it for your from the standard Auth0 /pem URI based on your tenant ID, e.g. https://tenantid.region.auth0.com/pem"
+  AUTH0_CERTIFICATE_SOURCE AUTH0_CERTIFICATE_SOURCE_CHOICE
+
+  optional ( AUTH0_CERTIFICATE_SOURCE_CHOICE == "existing" ) {
+    choice AUTH0_CERT_FILE default "/Common/default.crt" display "xxlarge" tcl {
+      tmsh::run_proc f5.app_utils:get_ssl_certs
+    }
+  }
+}
+section dns_resolver {
+  message DNS_RESOLVER_HELP_INTRO "BIG-IP APM as an OAuth/OpenID Connect client will need to connect to Auth0 for a number of requests, to do this it must utilise a DNS resolver configuration object. If you havn't configured a DNS resolver object yet this iApp can create one for you, if you already have one due to special requirements, select that instead."
+  DNS_RESOLVER_OBJECT DNS_RESOLVER_OBJECT_CHOICE
+
+  optional ( DNS_RESOLVER_OBJECT_CHOICE == "existing" ) {
+    choice DNS_RESOLVER_SELECTION default "" display "xxlarge" tcl {
+      set resolver_objects [split [tmsh::list /net dns-resolver one-line] "\n"]
+      foreach resolver_object ${resolver_objects} {
+        set resolver_object_name [lindex [split ${resolver_object}] 2]
+        if { ${resolver_object_name} != {} } {
+          lappend dns_resolver_list ${resolver_object_name}
+        }
+      }
+      if { [llength dns_resolver_list] == 0 } { return [list {No DNS Resolvers configured, you need to create one.}] }
+
+      return ${dns_resolver_list}
+    }
+  }
+}
+section apm_policy {
+  message APM_POLICY_HELP_INTRO "A basic APM policy will utilise Auth0's OAuth/OpenID Connect service as a client for authentication. It will also obtain a JSON Web Token (JWT) and validate the JSON Web Signature (JWS) included as part of the JWT. The JWT will be used to complete a OpenID Connect UserInfo request."
+  APM_POLICY_ACTION APM_POLICY_ACTION_CHOICE
+}
+optional ( apm_policy.APM_POLICY_ACTION_CHOICE == "create" ) {
+  section virtual_server {
+    message VIRTUAL_SERVER_HELP_INTRO "To create a virtual server to attach the APM policy to please consider using the official F5 HTTP Applications iApp available here: https://f5.com/solutions/deployment-guides"
+  }
+}
+
+### TEXT DISPLAY ###
+text {
+  introduction "Welcome to the F5 Auth0 OAuth/OpenID Connection Integration iApp"
+  introduction.INTRODUCTION "Introduction"
+
+  auth0_configuration "Auth0 Configuration"
+  auth0_configuration.AUTH0_CONFIGURATION_HELP_INTRO ""
+  auth0_configuration.AUTH0_ID_HELP ""
+  auth0_configuration.AUTH0_ID "What's your Auth0 instance ID?"
+  auth0_configuration.AUTH0_CLIENT_ID_HELP ""
+  auth0_configuration.AUTH0_CLIENT_ID "What's your Auth0 Client ID?"
+  auth0_configuration.AUTH0_CLIENT_SECRET_HELP ""
+  auth0_configuration.AUTH0_CLIENT_SECRET "What's your Auth0 Client Secret? (optional)"
+  auth0_configuration.AUTH0_CERT_FILE "Certificate File"
+  auth0_configuration.AUTH0_CERTIFICATE_SOURCE_HELP ""
+  auth0_configuration.AUTH0_CERTIFICATE_SOURCE_CHOICE "Auth0 Certificate Source"
+
+  dns_resolver "DNS Resolver Configuration"
+  dns_resolver.DNS_RESOLVER_HELP_INTRO ""
+  dns_resolver.DNS_RESOLVER_OBJECT_CHOICE "Action"
+  dns_resolver.DNS_RESOLVER_SELECTION "DNS Resolver"
+
+  apm_policy "APM Policy Configuration"
+  apm_policy.APM_POLICY_HELP_INTRO ""
+  apm_policy.APM_POLICY_ACTION_CHOICE "Action"
+
+  virtual_server "Virtual Server Setup"
+  virtual_server.VIRTUAL_SERVER_HELP_INTRO ""
+}
+            }
+            role-acl none
+            run-as none
+        }
+    }
+    description none
+    ignore-verification false
+    requires-bigip-version-max none
+    requires-bigip-version-min 13.1.0
+    requires-modules { apm }
+    signing-key none
+    tmpl-checksum none
+    tmpl-signature none
+}

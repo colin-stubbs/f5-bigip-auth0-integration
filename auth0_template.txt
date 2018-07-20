@@ -4,14 +4,9 @@ ltm profile server-ssl %{AUTH0_ID}%.auth0.com {
 }
 apm oauth jwk-config %{AUTH0_ID}%.auth0.com {
     alg-type RS256
-    cert %{AUTH0_ID}%.auth0.com.crt
-    cert-chain %{AUTH0_ID}%.auth0.com.crt
-    cert-thumbprint-sha1 %{AUTH0_ID_CERT_THUMBPRINT_SHA1}%
-    cert-thumbprint-sha256 %{AUTH0_ID_CERT_THUMBPRINT_SHA256}%
+    cert %{AUTH0_ID}%.auth0.com
+    cert-chain %{AUTH0_ID}%.auth0.com
     key-id %{AUTH0_ID_CERT_KID}%
-    modulus %{AUTH0_ID_CERT_MODULUS}%
-    public-exponent %{AUTH0_ID_CERT_PE}%
-    x5c { %{AUTH0_ID_CERT_PEM}% }
 }
 apm oauth jwt-config %{AUTH0_ID}%.auth0.com {
     access-token-expires-in 600

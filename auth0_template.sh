@@ -17,7 +17,9 @@ SED_ARGS=""
 VAR_LIST=`compgen -A variable | grep ^AUTH0_`
 
 for VAR_NAME in ${VAR_LIST} ; do
-  SED_ARGS="${SED_ARGS} -e 's#%{${VAR_NAME}}%#${!VAR_NAME}#g'"
+  if [ "${!VAR_NAME}x" != "x" ] ; then
+    SED_ARGS="${SED_ARGS} -e 's#%{${VAR_NAME}}%#${!VAR_NAME}#g'"
+  fi
 done
 
 /bin/bash -c "sed ${SED_ARGS} ${TEMPLATE}"
