@@ -4,7 +4,7 @@ Configuration templates/scripts/iRules/sample F5 BIG-IP APM policy to utilise Au
 
 # Using
 
-The wiki provides detailed instructions on deployment options.
+Head to the ![wiki](https://github.com/colin-stubbs/f5-bigip-auth0-integration/wiki) which provides detailed instructions on deployment options.
 
 ## Auth0 Instance Certificate Import
 
