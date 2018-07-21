@@ -1,7 +1,31 @@
-ltm rule RULE-BIGIP-OAuth-Fixer-Upper {
+ltm rule RULE-BIGIP-OAuth-Fixer-Upper { # RULE-BIGIP-OAuth-Fixer-Upper
+#
+# Copyright 2018 Colin Stubbs <cstubbs+github-content@gmail.com>
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+when RULE_INIT {
+  log local0. "initialised"
+}
+when CLIENT_ACCEPTED {
+  # needed to intercept the HTTP_REQUEST that would normally be handled by APM and inaccessible as an event
+  ACCESS::restrict_irule_events disable
+}
 when ACCESS_POLICY_AGENT_EVENT {
   # this removes silly F5 backslash based escaping that BIGIP automatically
-  # adds to OAuth related response attributes
+  # adds to OAuth related response attributes any time it sets/copies them around
+  # as APM session variables. APM appears to escape anything suspect automatically
+  # ALL of the time.
 
   if { [ACCESS::policy agent_id] equals {FIX_ID_TOKEN} } {
     set debug_irules [ACCESS::session data get session.custom.oauth.debug]
@@ -23,10 +47,14 @@ when ACCESS_POLICY_AGENT_EVENT {
   }
 }
 when HTTP_REQUEST {
-  # work around for BIGIP OAuth client not being able to handle POST based callbacks. Because F5 BIGIP bugs.
+  # Work around for BIGIP OAuth client not being able to handle POST based callbacks. Because F5 BIGIP bugs.
+  #
+  # If tokens/etc are returned as POST data and NOT as URI parameters APM will currently ignore them and treat the
+  # request as invalid. This intercepts this and trggers collection of request data
 
   if { [HTTP::uri] starts_with {/oauth/client/redirect} and [string tolower [HTTP::method]] equals {post} } {
     set debug_irules [ACCESS::session data get session.custom.oauth.debug]
+    set fix_oauth_post {1}
 
     if { [HTTP::header exists "Content-Length"] } {
       if { [HTTP::header "Content-Length"] > 1048000 }{
@@ -44,37 +72,43 @@ when HTTP_REQUEST {
   }
 }
 when HTTP_REQUEST_DATA {
+  # This event handler rewrites OAuth state and code POST data parameters as request URI parameters.
+
   if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] payload is '[HTTP::payload]'" }
+  
+  if { [info exists fix_oauth_post] and ${fix_oauth_post} equals {1} } {
+    set kvps [split [HTTP::payload] &]
 
-  set kvps [split [HTTP::payload] &]
-
-  if { [HTTP::uri] contains {?} } {
-    set append_to_uri {}
-  } else {
-    set append_to_uri {?aza=aza}
-  }
-  foreach kvp ${kvps} {
-    if { ${kvp} contains {=} } {
-      set key [getfield ${kvp} "=" 1]
-      set value [getfield ${kvp} "=" 2]
-      switch ${key} {
-        "state" -
-        "code" {
-          if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] adding param to URI ${key} = '$value'" }
-          set append_to_uri "${append_to_uri}&${key}=${value}"
-        }
-        default {
-          # do nothing or log as below, comment if not needed
-          if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] param $key = '$value'" }
-        }
-      }
-      unset key value
+    if { [HTTP::uri] contains {?} } {
+      set append_to_uri {}
+    } else {
+      set append_to_uri {?aza=aza}
     }
+    foreach kvp ${kvps} {
+      if { ${kvp} contains {=} } {
+        set key [getfield ${kvp} "=" 1]
+        set value [getfield ${kvp} "=" 2]
+        switch ${key} {
+          "state" -
+          "code" {
+            if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] adding param to URI ${key} = '$value'" }
+            set append_to_uri "${append_to_uri}&${key}=${value}"
+          }
+          default {
+            # do nothing or log as below, comment if not needed
+            if { ${debug_irules} equals {1} } { log local0. "DEBUG: POST to [HTTP::host][HTTP::uri] param $key = '$value'" }
+          }
+        }
+        unset key value
+      }
+    }
+
+    # whack it all on the end of the URI
+    HTTP::uri "[HTTP::uri]${append_to_uri}"
+
+    unset kvp kvps append_to_uri
   }
-
-  # whack it all on the end of the URI
-  HTTP::uri "[HTTP::uri]${append_to_uri}"
-
-  unset kvp kvps append_to_uri
 }
+
+# EOF
 }
