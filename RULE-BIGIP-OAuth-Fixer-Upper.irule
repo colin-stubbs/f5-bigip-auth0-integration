@@ -15,6 +15,7 @@ ltm rule RULE-BIGIP-OAuth-Fixer-Upper { # RULE-BIGIP-OAuth-Fixer-Upper
 # limitations under the License.
 #
 when RULE_INIT {
+  # generates records of when the iRule has been modified and re-initialised by each TMM instance
   log local0. "initialised"
 }
 when CLIENT_ACCEPTED {
