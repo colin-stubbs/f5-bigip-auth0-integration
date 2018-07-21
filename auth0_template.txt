@@ -117,6 +117,7 @@ apm aaa oauth-request Auth0UserInfoRequest {
     type openid-userinfo-request
 }
 apm aaa oauth-request Auth0ValidationScopeUserInfoRequest {
+    method get
     parameters {
         access_token {
             type access-token
