@@ -36,11 +36,15 @@ This is the process that the iApp uses in order to download and install the cert
 
 Import [this file](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/profile_Common_Auth0-Integration-Simple-Template.conf.tar.gz) into BIG-IP APM to build a policy based on this.
 
+NOTE: The policy is not associated with an OAuth Server/Provider/Request configuration objects so they will NOT be created at the same time. Use the configuration template to create a TMSH config script to merge those, then associate the policy agents with it, and apply the policy.
+
 ![Simple Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/Auth0-Integration-Simple-Template_Flow.png "Simple Policy Flow")
 
 ## Auth0 Authentication with Access Token/Scope Validation/API Query/SSO Policy Flow
 
 Import [this file](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/profile_Common_Auth0-Integration-Full-Template.conf.tar.gz) into BIG-IP APM to build a policy based on this.
+
+NOTE: The policy is not associated with an OAuth Server/Provider/Request configuration objects so they will NOT be created at the same time. Use the configuration template to create a TMSH config script to merge those, then associate the policy agents with it, and apply the policy.
 
 ![Full Policy Flow](https://github.com/colin-stubbs/f5-bigip-auth0-integration/blob/master/screenshots/Auth0-Integration-Full-Template_Flow.png "Full Policy Flow")
 
