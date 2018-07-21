@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TEMPLATE="auth0_template.txt"
+TEMPLATE="auth0_template_tmsh.txt"
 
 AUTH0_ID="AUTH0 ACCOUNT ID/INSTANCE ID GOES HERE"
 AUTH0_ID_CERT_KID="KEY ID GOES HERE"
