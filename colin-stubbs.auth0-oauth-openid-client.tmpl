@@ -1,11 +1,11 @@
 # Copyright 2018 Colin Stubbs <cstubbs+github-content@gmail.com>
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -1124,7 +1124,7 @@ proc iapp_get_ca_certs { args } {
     script-signature none
     signing-key none
 }
-sys application template /Common/colin-stubbs.auth0-oauth-openid-client.v0.0.1 {
+sys application template /Common/colin-stubbs.auth0-oauth-openid-client.v0.0.2 {
     actions {
         definition {
             html-help {
@@ -1653,7 +1653,7 @@ apm policy policy-item @partition/@service_folder/__POLICY_NAME___mac_auth0openi
     rules {
         {
             caption Successful
-            next-item @partition/@service_folder/__POLICY_NAME___end_allow
+            next-item @partition/@service_folder/__POLICY_NAME___act_full_resource_assign
         }
         {
             caption Failure
@@ -1690,6 +1690,27 @@ apm policy policy-item @partition/@service_folder/__POLICY_NAME___act_variable_a
     }
 }
 
+apm policy agent resource-assign @partition/@service_folder/__POLICY_NAME___act_full_resource_assign_ag {
+    rules none
+}
+
+apm policy policy-item @partition/@service_folder/__POLICY_NAME___act_full_resource_assign {
+    agents {
+        @partition/@service_folder/__POLICY_NAME___act_full_resource_assign_ag {
+            type resource-assign
+        }
+    }
+    caption "Advanced Resource Assign"
+    color 1
+    item-type action
+    rules {
+        {
+            caption fallback
+            next-item @partition/@service_folder/__POLICY_NAME___end_allow
+        }
+    }
+}
+
 apm policy policy-item @partition/@service_folder/__POLICY_NAME___end_deny {
     agents {
         @partition/@service_folder/__POLICY_NAME___end_deny_ag {
@@ -1716,6 +1737,7 @@ apm policy access-policy @partition/@service_folder/__POLICY_NAME__ {
     default-ending @partition/@service_folder/__POLICY_NAME___end_deny
     items {
         @partition/@service_folder/__POLICY_NAME___act_variable_assign { }
+        @partition/@service_folder/__POLICY_NAME___act_full_resource_assign { }
         @partition/@service_folder/__POLICY_NAME___end_allow { }
         @partition/@service_folder/__POLICY_NAME___end_deny { }
         @partition/@service_folder/__POLICY_NAME___ent { }
