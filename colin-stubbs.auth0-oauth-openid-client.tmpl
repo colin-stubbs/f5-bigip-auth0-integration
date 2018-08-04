@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+#TMSH-VERSION: 13.1.0
 
+cli admin-partitions {
+    update-partition Common
+}
 cli script /Common/f5.iapp.1.5.6.cli {
 #  Initialization proc for all templates.
 #  Parameters "start" and "stop" or "end".
@@ -1124,7 +1128,7 @@ proc iapp_get_ca_certs { args } {
     script-signature none
     signing-key none
 }
-sys application template /Common/colin-stubbs.auth0-oauth-openid-client.v0.0.2 {
+sys application template /Common/colin-stubbs.auth0-oauth-openid-client.v0.0.3 {
     actions {
         definition {
             html-help {
@@ -1199,30 +1203,30 @@ set AUTH0_AUDIENCE {}
 set AUTH0_SCOPE {openid profile}
 set AUTH0_PROMPT {}
 
-if {[info exists {::auth0_configuration__AUTH0_ID}]} {
+if {[info exists {::AUTH0_CONFIGURATION__ID}]} {
 
-  if { ${::auth0_configuration__AUTH0_CERTIFICATE_SOURCE_CHOICE} equals {download} } {
-    set status [catch {tmsh::create sys file ssl-cert ${::auth0_configuration__AUTH0_ID}.auth0.com source-path https://${::auth0_configuration__AUTH0_ID}.auth0.com/pem} message]
+  if { ${::AUTH0_CONFIGURATION__CERTIFICATE_SOURCE_CHOICE} equals {download} } {
+    set status [catch {tmsh::create sys file ssl-cert ${::AUTH0_CONFIGURATION__ID}.auth0.com source-path https://${::AUTH0_CONFIGURATION__ID}.auth0.com/pem} message]
     debug [list create_cert done] "status=$status message=$message" 9
     if { ${message} equals {} } {
-      set AUTH0_CERT ${::auth0_configuration__AUTH0_ID}.auth0.com
+      set AUTH0_CERT ${::AUTH0_CONFIGURATION__ID}.auth0.com
     }
   } else {
-    set AUTH0_CERT ${::auth0_configuration__AUTH0_CERT_FILE}
+    set AUTH0_CERT ${::AUTH0_CONFIGURATION__CERT_FILE}
   }
 
-  set jwks_url "https://${::auth0_configuration__AUTH0_ID}.auth0.com/.well-known/jwks.json"
+  set jwks_url "https://${::AUTH0_CONFIGURATION__ID}.auth0.com/.well-known/jwks.json"
 
   set status [catch { set AUTH0_ID_CERT_KID [exec /usr/bin/curl --connect-timeout 5 -k -s -o - ${jwks_url} | jq -r .keys\[0\].kid] } message]
   debug [list curl_get_kid done] "status=$status message=$message" 9
 }
 
-  if { ${::dns_resolver__DNS_RESOLVER_OBJECT_CHOICE} == {create} } {
+  if { ${::DNS_RESOLVER_CONFIGURATION__OBJECT_CHOICE} == {create} } {
     # create new DNS resolver object here
     iapp_conf create net dns-resolver ${app}_dns_resolver
     set DNS_RESOLVER_OBJECT ${app}_dns_resolver
-  } elseif { ${::dns_resolver__DNS_RESOLVER_SELECTION} != {} } {
-    set DNS_RESOLVER_OBJECT ${::dns_resolver__DNS_RESOLVER_SELECTION}
+  } elseif { ${::DNS_RESOLVER_CONFIGURATION__SELECTION} != {} } {
+    set DNS_RESOLVER_OBJECT ${::DNS_RESOLVER_CONFIGURATION__SELECTION}
   }
 
   if { ${AUTH0_ID_CERT_KID} != {} and ${DNS_RESOLVER_OBJECT} != {} and ${AUTH0_CERT} != {} } {
@@ -1358,7 +1362,7 @@ apm sso oauth-bearer SSO-OAuth-Bearer-__AUTH0_ID__.auth0.com {
 }
   }
 
-  set cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::auth0_configuration__AUTH0_CLIENT_ID}} __AUTH0_CLIENT_SECRET__ {${::auth0_configuration__AUTH0_CLIENT_SECRET}} __AUTH0_ID_CERT_KID__ {${AUTH0_ID_CERT_KID}} __AUTH0_CERT__ {${AUTH0_CERT}} __AUTH0_ID__ {${::auth0_configuration__AUTH0_ID}} __DNS_RESOLVER_OBJECT__ {${DNS_RESOLVER_OBJECT}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $cfg]
+  set cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::AUTH0_CONFIGURATION__CLIENT_ID}} __AUTH0_CLIENT_SECRET__ {${::AUTH0_CONFIGURATION__CLIENT_SECRET}} __AUTH0_ID_CERT_KID__ {${AUTH0_ID_CERT_KID}} __AUTH0_CERT__ {${AUTH0_CERT}} __AUTH0_ID__ {${::AUTH0_CONFIGURATION__ID}} __DNS_RESOLVER_OBJECT__ {${DNS_RESOLVER_OBJECT}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $cfg]
 
   set fileId [open /var/tmp/${app}-merge.cfg "w"]
   puts -nonewline $fileId $cfg
@@ -1366,7 +1370,7 @@ apm sso oauth-bearer SSO-OAuth-Bearer-__AUTH0_ID__.auth0.com {
 
   tmsh::load sys config merge file /var/tmp/${app}-merge.cfg
 
-  if { ${::apm_policy__APM_POLICY_ACTION_CHOICE} == {create} } {
+  if { ${::APM_POLICY_CONFIGURATION__ACTION_CHOICE} == {create} } {
 
     set POLICY_NAME "${app}_policy"
 
@@ -1795,7 +1799,7 @@ apm profile access @partition/@service_folder/__POLICY_NAME__ {
 }
     }
 
-    set policy_cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::auth0_configuration__AUTH0_CLIENT_ID}} __POLICY_NAME__ {${POLICY_NAME}} __AUTH0_ID__ {${::auth0_configuration__AUTH0_ID}} __AUTH0_OAUTH_DEBUG__ {${AUTH0_OAUTH_DEBUG}} __AUTH0_RESPONSE_MODE__ {${AUTH0_RESPONSE_MODE}} __AUTH0_CONNECTION__ {${::auth0_configuration__AUTH0_CONNECTION}} __AUTH0_AUDIENCE__ {${::auth0_configuration__AUTH0_AUDIENCE}} __AUTH0_SCOPE__ {${::auth0_configuration__AUTH0_SCOPE}} __AUTH0_PROMPT__ {${AUTH0_PROMPT}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $policy_cfg]
+    set policy_cfg [string map "@service_folder $tmsh::app_name.app @partition $partition @defaultrd $defaultrd __AUTH0_CLIENT_ID__ {${::AUTH0_CONFIGURATION__CLIENT_ID}} __POLICY_NAME__ {${POLICY_NAME}} __AUTH0_ID__ {${::AUTH0_CONFIGURATION__ID}} __AUTH0_OAUTH_DEBUG__ {${AUTH0_OAUTH_DEBUG}} __AUTH0_RESPONSE_MODE__ {${AUTH0_RESPONSE_MODE}} __AUTH0_CONNECTION__ {${::AUTH0_CONFIGURATION__CONNECTION}} __AUTH0_AUDIENCE__ {${::AUTH0_CONFIGURATION__AUDIENCE}} __AUTH0_SCOPE__ {${::AUTH0_CONFIGURATION__SCOPE}} __AUTH0_PROMPT__ {${AUTH0_PROMPT}} __app_service__ $tmsh::app_name.app/$tmsh::app_name " $policy_cfg]
 
     set fileId [open /var/tmp/${app}-merge.cfg "w"]
     puts -nonewline $fileId $policy_cfg
@@ -1821,18 +1825,17 @@ define choice INLINE_HELP display "xxlarge" default "max" {
   "Yes, show inline help" => "max",
   "No, do not show inline help" => "hide"
 }
-define choice CONFIGURATION_MODE display "xxlarge" default "hide" {
+define choice IAPP_MODE display "xxlarge" default "hide" {
   "Basic - Use Auth0 default and iApp recommended settings" => "basic",
   "Advanced - Configure all options" => "advanced"
 }
-define choice AUTH0_SCENARIO default "basic" display "xxlarge" {
-  "Basic" => "basic",
-  "Full" => "full",
+define choice APP_SCENARIO default "basic" display "xxlarge" {
+  "Standard Web Application" => "basic",
   "Single Page Application" => "spa"
 }
-define choice AUTH0_CERTIFICATE_SOURCE default "existing" display "xxlarge" {
-  "Existing Certificate File on this BIG-IP" => "existing",
-  "Download and install certificate from Auth0" => "download"
+define choice CERTIFICATE_SOURCE default "existing" display "xxlarge" {
+  "Use existing certificate file on this BIG-IP" => "existing",
+  "Download and install certificate" => "download"
 }
 define choice DNS_RESOLVER_OBJECT default "existing" display "xxlarge" {
   "Use Existing" => "existing",
@@ -1842,46 +1845,82 @@ define choice APM_POLICY_ACTION default "basic" display "xxlarge" {
   "Create" => "create",
   "No policy required" => "ignore"
 }
-
-### SECTIONS ###
-section introduction {
-  message INTRODUCTION "Use this template to configure BIG-IP with APM federation components, and optionally create an access policy, to act as an OAuth/OpenID Connect Client against Auth0."
+define choice APP_SSO_METHOD display "xxlarge" default "none" {
+  "No SSO required" => "none",
+  "Custom/iRule Based" => "irule",
+  "OAuth Bearer" => "oauth_bearer",
+  "HTTP Basic" => "http_basic",
+  "NTLMv1" => "ntlmv1",
+  "NTLMv2" => "ntlmv2",
+  "Kerberos" => "kerberos",
+  "Form Based" => "form",
+  "Forms - Client Initiated" => "forms_ci",
+  "Cookie" => "cookie"
 }
 
-section auth0_configuration {
-  message AUTH0_CONFIGURATION_HELP_INTRO "The following parameters are available in the Auth0 Dashboard for your instance. You will need to create an application to represent this F5 BIG-IP and to obtain the client ID and secret. The application type can be any, but is probably best defined as a 'Regular Web Application'."
+### SECTIONS ###
+section INTRODUCTION {
+  message DESCRIPTION "Use this template to configure BIG-IP with APM federation components, and optionally create an access policy, to act as an OAuth/OpenID Connect Client against Auth0."
+  INLINE_HELP INLINE_HELP_CHOICE
+  optional ( INLINE_HELP_CHOICE == "max" ) {
+    message INLINE_HELP_CHOICE_HELP_CHASER "Inline help is available to provide contextual descriptions to aid in the completion of this configuration. Select to show or hide the inline help in this template. Important notes and warnings are always visible, no matter which selection you make here."
+  }
+  IAPP_MODE IAPP_MODE_CHOICE
+  optional ( INLINE_HELP_CHOICE == "max" ) {
+    message IAPP_MODE_CHOICE_HELP_CHASER "This template supports basic and advanced configurations modes. Basic mode exposes the most commonly used settings, and automatically configures the rest of the options based on F5's recommended settings. Advanced mode allows you to review and change all settings. If you are unsure, select Basic."
+  }
+}
 
-  message AUTH0_ID_HELP "Your Auth0 ID is the tenant ID followed by region if using a non-US region. For example if your tenant is 'bigcorp' deployed in the US the Auth0 ID is 'bigcorp', if you have a second tenant for bigcorp in Australia the Auth0 ID is likely 'bigcorp.au'."
-  string AUTH0_ID display "xxlarge"
-  message AUTH0_CLIENT_ID_HELP "This is the unique string that identifies your application that represents this BIG-IP. Find it in the Auth0 admin interface, e.g. under https://manage.auth0.com/#/applications"
-  string AUTH0_CLIENT_ID display "xxlarge"
-  message AUTH0_CLIENT_SECRET_HELP "This is the secret key used for communication between Auth0 and your application that represents this BIG-IP. Find it in the Auth0 admin interface, within the application configuration, e.g. under https://manage.auth0.com/#/applications"
-  string AUTH0_CLIENT_SECRET display "xxlarge"
+section AUTH0_CONFIGURATION {
+  message HELP_INTRO "The following parameters are available in the Auth0 Dashboard for your instance. You will need to create an application to represent this F5 BIG-IP and to obtain the client ID and secret. The application type can be any, but is probably best defined as a 'Regular Web Application'."
 
-  message AUTH0_CERTIFICATE_SOURCE_HELP "The X.509 certificate used by Auth0 to digitally sign some tokens and messages must exist on the BIG-IP. If you've already downloaded and installed it select the certificate from the list. If you have not obtained the certificate yet this iApp will do it for your from the standard Auth0 /pem URI based on your tenant ID, e.g. https://tenantid.region.auth0.com/pem"
-  AUTH0_CERTIFICATE_SOURCE AUTH0_CERTIFICATE_SOURCE_CHOICE
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message ID_HELP "Your Auth0 ID is the tenant ID followed by region if using a non-US region. For example if your tenant is 'bigcorp' deployed in the US the Auth0 ID is 'bigcorp', if you have a second tenant for bigcorp in Australia the Auth0 ID is likely 'bigcorp.au'."
+  }
+  string ID display "xxlarge"
 
-  optional ( AUTH0_CERTIFICATE_SOURCE_CHOICE == "existing" ) {
-    choice AUTH0_CERT_FILE default "/Common/default.crt" display "xxlarge" tcl {
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message CLIENT_ID_HELP "This is the unique string that identifies your application that represents this BIG-IP. Find it in the Auth0 admin interface, e.g. under https://manage.auth0.com/#/applications"
+  }
+  string CLIENT_ID display "xxlarge"
+
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message CLIENT_SECRET_HELP "This is the secret key used for communication between Auth0 and your application that represents this BIG-IP. Find it in the Auth0 admin interface, within the application configuration, e.g. under https://manage.auth0.com/#/applications"
+  }
+  password CLIENT_SECRET display "xxlarge"
+
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message CERTIFICATE_SOURCE_HELP "The X.509 certificate used by Auth0 to digitally sign some tokens and messages must exist on the BIG-IP. If you've already downloaded and installed it select the certificate from the list. If you have not obtained the certificate yet this iApp will do it for your from the standard Auth0 /pem URI based on your tenant ID, e.g. https://tenantid.region.auth0.com/pem"
+  }
+  CERTIFICATE_SOURCE CERTIFICATE_SOURCE_CHOICE
+
+  optional ( CERTIFICATE_SOURCE_CHOICE == "existing" ) {
+    choice CERT_FILE default "/Common/default.crt" display "xxlarge" tcl {
       tmsh::run_proc f5.app_utils:get_ssl_certs
     }
   }
 
-  message AUTH0_AUDIENCE_HELP "Audience value. This is essential in order to actually receive a signed JSON Web Token (JWT), if not set Auth0 will return a token which can be used to further interact with Auth0 services (e.g. OpenID Connect UserInfo) but the token cannot be used against other API's. Be sure to setup/define your API in the Auth0 management interface, set the audience value there, and use the same value here to get an appropriate JWT for SSO to your application if it accepts an OAuth Bearer HTTP header with the JWT."
-  string AUTH0_AUDIENCE display "xxlarge"
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message AUDIENCE_HELP "Audience value. This is essential in order to actually receive a signed JSON Web Token (JWT), if not set Auth0 will return a token which can be used to further interact with Auth0 services (e.g. OpenID Connect UserInfo) but the token cannot be used against other API's. Be sure to setup/define your API in the Auth0 management interface, set the audience value there, and use the same value here to get an appropriate JWT for SSO to your application if it accepts an OAuth Bearer HTTP header with the JWT."
+  }
+  string AUDIENCE display "xxlarge"
 
-  message AUTH0_CONNECTION_HELP "Optional value if Auth0 should utilise an external connection for authentiation. Leave blank unless you're sure you need to set this."
-  string AUTH0_CONNECTION display "xxlarge"
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message CONNECTION_HELP "Optional value if Auth0 should utilise an external connection for authentiation. Leave blank unless you're sure you need to set this."
+  }
+  string CONNECTION display "xxlarge"
 
-  message AUTH0_SCOPE_HELP "The scope to request as part of authentication. Leave at default of 'openid profile' unless you know you need something else."
-  string AUTH0_SCOPE display "xxlarge" default "openid profile"
+  optional ( INTRODUCTION.INLINE_HELP_CHOICE == "max" ) {
+    message SCOPE_HELP "The scope to request as part of authentication. Leave at default of 'openid profile' unless you know you need something else."
+  }
+  string SCOPE display "xxlarge" default "openid profile"
 }
-section dns_resolver {
-  message DNS_RESOLVER_HELP_INTRO "BIG-IP APM as an OAuth/OpenID Connect client will need to connect to Auth0 for a number of requests, to do this it must utilise a DNS resolver configuration object. If you havn't configured a DNS resolver object yet this iApp can create one for you, if you already have one due to special requirements, select that instead."
-  DNS_RESOLVER_OBJECT DNS_RESOLVER_OBJECT_CHOICE
+section DNS_RESOLVER_CONFIGURATION {
+  message HELP_INTRO "BIG-IP APM as an OAuth/OpenID Connect client will need to connect to Auth0 for a number of requests, to do this it must utilise a DNS resolver configuration object. If you havn't configured a DNS resolver object yet this iApp can create one for you, if you already have one due to special requirements, select that instead."
+  DNS_RESOLVER_OBJECT OBJECT_CHOICE
 
-  optional ( DNS_RESOLVER_OBJECT_CHOICE == "existing" ) {
-    choice DNS_RESOLVER_SELECTION default "" display "xxlarge" tcl {
+  optional ( OBJECT_CHOICE == "existing" ) {
+    choice SELECTION default "" display "xxlarge" tcl {
       set resolver_objects [split [tmsh::list /net dns-resolver one-line] "\n"]
       foreach resolver_object ${resolver_objects} {
         set resolver_object_name [lindex [split ${resolver_object}] 2]
@@ -1895,53 +1934,89 @@ section dns_resolver {
     }
   }
 }
-section apm_policy {
-  message APM_POLICY_HELP_INTRO "A basic APM policy will utilise Auth0's OAuth/OpenID Connect service as a client for authentication. It will also obtain a JSON Web Token (JWT) and validate the JSON Web Signature (JWS) included as part of the JWT. The JWT will be used to complete a OpenID Connect UserInfo request."
-  APM_POLICY_ACTION APM_POLICY_ACTION_CHOICE
+section APM_POLICY_CONFIGURATION {
+  message HELP_INTRO "A basic APM policy will utilise Auth0's OAuth/OpenID Connect service as a client for authentication. It will also obtain a JSON Web Token (JWT) and validate the JSON Web Signature (JWS) included as part of the JWT. The JWT will be used to complete a OpenID Connect UserInfo request."
+  APM_POLICY_ACTION ACTION_CHOICE
+  optional ( ACTION_CHOICE == "create" ) {
+    APP_SSO_METHOD APP_SSO_METHOD_CHOICE
+    optional ( APP_SSO_METHOD_CHOICE == "oauth_bearer" ) {
+      message OAUTH_BEARER_SSO_OBJECT_SELECTION "Provide list of OAuth Bearer SSO objects here"
+    }
+    optional ( APP_SSO_METHOD_CHOICE == "http_basic" ) {
+      message HTTP_BASIC_SSO_OBJECT_SELECTION "Provide list of HTTP Basic SSO objects here"
+    }
+    optional ( APP_SSO_METHOD_CHOICE == "ntlmv1" ) {
+      message NTLMV1_SSO_OBJECT_SELECTION "Provide list of NTLMv1 SSO objects here"
+    }
+    optional ( APP_SSO_METHOD_CHOICE == "ntlmv2" ) {
+      message NTLMV2_SSO_OBJECT_SELECTION"Provide list of NTLMv2 SSO objects here"
+    }
+    optional ( APP_SSO_METHOD_CHOICE == "kerberos" ) {
+      message KERBEROS_SSO_OBJECT_SELECTION "Provide list of Kerberos SSO objects here"
+    }
+    optional ( APP_SSO_METHOD_CHOICE == "form" ) {
+      message FORM_SSO_OBJECT_SELECTION "Provide list of Form SSO objects here"
+    }
+    optional ( APP_SSO_METHOD_CHOICE == "forms_ci" ) {
+      message FORMS_CI_SSO_OBJECT_SELECTION "Provide list of Client Initiated Form SSO objects here"
+    }
+  }
 }
-optional ( apm_policy.APM_POLICY_ACTION_CHOICE == "create" ) {
-  section virtual_server {
-    message VIRTUAL_SERVER_HELP_INTRO "To create a virtual server to attach the APM policy to please consider using the official F5 HTTP Applications iApp available here: https://f5.com/solutions/deployment-guides"
+optional ( APM_POLICY_CONFIGURATION.ACTION_CHOICE == "create" ) {
+  section VS_CONFIGURATION {
+    message HELP_INTRO "To create a virtual server to attach the APM policy to please consider using the official F5 HTTP Applications iApp available here: <a href='https://f5.com/solutions/deployment-guides'>https://f5.com/solutions/deployment-guides</a>"
   }
 }
 
 ### TEXT DISPLAY ###
 text {
-  introduction "Welcome to the F5 Auth0 OAuth/OpenID Connection Integration iApp"
-  introduction.INTRODUCTION "Introduction"
+  INTRODUCTION "Welcome to the F5 Auth0 OAuth/OpenID Connection Integration iApp"
+  INTRODUCTION.DESCRIPTION "Introduction"
+  INTRODUCTION.INLINE_HELP_CHOICE "Do you want to see inline help?"
+  INTRODUCTION.IAPP_MODE_CHOICE "Which configuration mode do you want to use?"
+  INTRODUCTION.INLINE_HELP_CHOICE_HELP_CHASER ""
+  INTRODUCTION.IAPP_MODE_CHOICE_HELP_CHASER ""
 
-  auth0_configuration "Auth0 Configuration"
-  auth0_configuration.AUTH0_CONFIGURATION_HELP_INTRO ""
-  auth0_configuration.AUTH0_ID_HELP ""
-  auth0_configuration.AUTH0_ID "What's your Auth0 instance ID?"
-  auth0_configuration.AUTH0_CLIENT_ID_HELP ""
-  auth0_configuration.AUTH0_CLIENT_ID "What's your Auth0 Client ID?"
-  auth0_configuration.AUTH0_CLIENT_SECRET_HELP ""
-  auth0_configuration.AUTH0_CLIENT_SECRET "What's your Auth0 Client Secret? (optional)"
-  auth0_configuration.AUTH0_CERT_FILE "Certificate File"
-  auth0_configuration.AUTH0_CERTIFICATE_SOURCE_HELP ""
-  auth0_configuration.AUTH0_CERTIFICATE_SOURCE_CHOICE "Auth0 Certificate Source"
+  AUTH0_CONFIGURATION "Auth0 Configuration"
+  AUTH0_CONFIGURATION.HELP_INTRO ""
+  AUTH0_CONFIGURATION.ID_HELP ""
+  AUTH0_CONFIGURATION.ID "What's your Auth0 instance ID?"
+  AUTH0_CONFIGURATION.CLIENT_ID_HELP ""
+  AUTH0_CONFIGURATION.CLIENT_ID "What's your Auth0 Client ID?"
+  AUTH0_CONFIGURATION.CLIENT_SECRET_HELP ""
+  AUTH0_CONFIGURATION.CLIENT_SECRET "What's your Auth0 Client Secret? (optional)"
+  AUTH0_CONFIGURATION.CERT_FILE "Certificate File"
+  AUTH0_CONFIGURATION.CERTIFICATE_SOURCE_HELP ""
+  AUTH0_CONFIGURATION.CERTIFICATE_SOURCE_CHOICE "Auth0 Certificate Source"
 
-  auth0_configuration.AUTH0_AUDIENCE_HELP ""
-  auth0_configuration.AUTH0_AUDIENCE "Auth0 Token Audience"
+  AUTH0_CONFIGURATION.AUDIENCE_HELP ""
+  AUTH0_CONFIGURATION.AUDIENCE "Token Audience (Optional)"
 
-  auth0_configuration.AUTH0_CONNECTION_HELP ""
-  auth0_configuration.AUTH0_CONNECTION "Auth0 Connection (Optional)"
+  AUTH0_CONFIGURATION.CONNECTION_HELP ""
+  AUTH0_CONFIGURATION.CONNECTION "Auth0 Connection (Optional)"
 
-  auth0_configuration.AUTH0_SCOPE_HELP ""
-  auth0_configuration.AUTH0_SCOPE "Auth0 Scope"
+  AUTH0_CONFIGURATION.SCOPE_HELP ""
+  AUTH0_CONFIGURATION.SCOPE "Auth0 Scope"
 
-  dns_resolver "DNS Resolver Configuration"
-  dns_resolver.DNS_RESOLVER_HELP_INTRO ""
-  dns_resolver.DNS_RESOLVER_OBJECT_CHOICE "Action"
-  dns_resolver.DNS_RESOLVER_SELECTION "DNS Resolver"
+  DNS_RESOLVER_CONFIGURATION "DNS Resolver Configuration"
+  DNS_RESOLVER_CONFIGURATION.HELP_INTRO ""
+  DNS_RESOLVER_CONFIGURATION.OBJECT_CHOICE "Action"
+  DNS_RESOLVER_CONFIGURATION.SELECTION "DNS Resolver"
 
-  apm_policy "APM Policy Configuration"
-  apm_policy.APM_POLICY_HELP_INTRO ""
-  apm_policy.APM_POLICY_ACTION_CHOICE "Action"
+  APM_POLICY_CONFIGURATION "APM Policy Configuration"
+  APM_POLICY_CONFIGURATION.HELP_INTRO ""
+  APM_POLICY_CONFIGURATION.ACTION_CHOICE "Action"
+  APM_POLICY_CONFIGURATION.APP_SSO_METHOD_CHOICE "What Authentication/Sign-On method is used from APM to the application?"
+  APM_POLICY_CONFIGURATION.OAUTH_BEARER_SSO_OBJECT_SELECTION "Select an existing OAuth Bearer SSO configuration to use."
+  APM_POLICY_CONFIGURATION.HTTP_BASIC_SSO_OBJECT_SELECTION "Select an existing HTTP Basic SSO configuration to use."
+  APM_POLICY_CONFIGURATION.NTLMV1_SSO_OBJECT_SELECTION "Select an existing NTLMv1 SSO configuration to use."
+  APM_POLICY_CONFIGURATION.NTLMV2_SSO_OBJECT_SELECTION "Select an existing NTLMv2 SSO configuration to use."
+  APM_POLICY_CONFIGURATION.KERBEROS_SSO_OBJECT_SELECTION "Select an existing Kerberos SSO configuration to use."
+  APM_POLICY_CONFIGURATION.FORM_SSO_OBJECT_SELECTION "Select an existing Form Based SSO configuration to use."
+  APM_POLICY_CONFIGURATION.FORMS_CI_SSO_OBJECT_SELECTION "Select an existing Client Initiated Forms SSO configuration to use."
 
-  virtual_server "Virtual Server Setup"
-  virtual_server.VIRTUAL_SERVER_HELP_INTRO ""
+  VS_CONFIGURATION "Virtual Server Setup"
+  VS_CONFIGURATION.HELP_INTRO ""
 }
             }
             role-acl none
