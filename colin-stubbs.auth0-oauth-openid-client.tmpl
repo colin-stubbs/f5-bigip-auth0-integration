@@ -1833,11 +1833,17 @@ apm profile access @partition/@service_folder/__POLICY_NAME__ {
 
     tmsh::modify apm profile access ${POLICY_NAME} generation-action increment
 
+    if { ${::INTRODUCTION__IAPP_MODE_CHOICE} == "advanced" and ${::APM_POLICY_CONFIGURATION__STRICT_UPDATES_CHOICE} == "disable" } {
+      tmsh::modify sys application service ${app} strict-updates disabled
+    } else {
+      tmsh::modify sys application service ${app} strict-updates enabled
+    }
+
     tmsh::modify apm profile access ${POLICY_NAME} generation-action increment
   }
 }
 
-iapp_template stop
+              iapp_template stop
             }
             macro {
             }
@@ -1849,21 +1855,30 @@ define choice INLINE_HELP display "xxlarge" default "max" {
   "No, do not show inline help" => "hide",
   "Yes, show inline help" => "max"
 }
+
 define choice IAPP_MODE display "xxlarge" default "hide" {
   "Basic - Use Auth0 default and iApp recommended settings" => "basic",
   "Advanced - Configure all options" => "advanced"
 }
+
 define choice APP_SCENARIO default "basic" display "xxlarge" {
   "Standard Web Application" => "basic",
   "Single Page Application" => "spa"
 }
+
 define choice CERTIFICATE_SOURCE default "existing" display "xxlarge" {
   "Use existing certificate file on this BIG-IP" => "existing",
   "Download and install certificate" => "download"
 }
+
 define choice APM_POLICY_ACTION default "basic" display "xxlarge" {
   "Create all necessary configuration objects and an access policy" => "create",
   "No access policy required, just create the necessary configuration objects for me" => "ignore"
+}
+
+define choice STRICT_UPDATES default "enable" display "xxlarge" {
+  "Enable strict updates (default setting)" => "enable",
+  "Disable strict updates" => "disable"
 }
 
 ### SECTIONS ###
@@ -1966,9 +1981,12 @@ optional ( INTRODUCTION.BASH_DISABLED == "no") {
     message HELP_INTRO "A basic APM policy will utilise Auth0's OAuth/OpenID Connect service as a client for authentication. It will also obtain a JSON Web Token (JWT) and validate the JSON Web Signature (JWS) included as part of the JWT. The JWT will be used to complete a OpenID Connect UserInfo request."
     APM_POLICY_ACTION ACTION_CHOICE
     optional ( ACTION_CHOICE == "create" ) {
-      choice SSO_OBJECT_SELECTION display "xxlarge" default "/#create#" tcl {
-        set ::choices "Create a new iApp recommended OAuth Bearer SSO configuration\t/#create#\nNo SSO by policy required\t/#none#\n[tmsh::run_proc f5.iapp.1.5.6.cli:iapp_get_items apm sso]"
-        return [tmsh::run_proc f5.iapp.1.5.6.cli:iapp_safe_display ::choices]
+      optional ( INTRODUCTION.IAPP_MODE_CHOICE == "advanced" ) {
+        choice SSO_OBJECT_SELECTION display "xxlarge" default "/#create#" tcl {
+          set ::choices "Create a new iApp recommended OAuth Bearer SSO configuration\t/#create#\nNo SSO by policy required\t/#none#\n[tmsh::run_proc f5.iapp.1.5.6.cli:iapp_get_items apm sso]"
+          return [tmsh::run_proc f5.iapp.1.5.6.cli:iapp_safe_display ::choices]
+        }
+        STRICT_UPDATES STRICT_UPDATES_CHOICE
       }
       message APM_APPLY "If using BIG-IP APM, you may need to click the 'Apply Access Policy' link (in the upper left corner of the Configuration utility, to the right of the F5 logo) after running the iApp template."
     }
@@ -2025,6 +2043,7 @@ text {
   APM_POLICY_CONFIGURATION.HELP_INTRO ""
   APM_POLICY_CONFIGURATION.ACTION_CHOICE "Action"
   APM_POLICY_CONFIGURATION.SSO_OBJECT_SELECTION "How should the access policy perform Single Sign-On?"
+  APM_POLICY_CONFIGURATION.STRICT_UPDATES_CHOICE "Should the access policy have strict updates enabled? e.g. no changes permitted"
   APM_POLICY_CONFIGURATION.APM_APPLY ""
 
   VS_CONFIGURATION "Virtual Server Setup"
